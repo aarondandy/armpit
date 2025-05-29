@@ -1,0 +1,35 @@
+{
+  "name": "armpit",
+  "version": "0.0.1",
+  "exports": "./dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsup index.ts --format cjs --format esm --dts",
+    "watch": "tsup index.ts --watch --format esm --dts",
+    "lint": "tsc",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "description": "Another resource manager programming interface toolkit.",
+  "keywords": [
+    "arm",
+    "azure",
+    "azure-cli",
+    "az-cli"
+  ],
+  "author": "aarondandy",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.24",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@azure/arm-resources-subscriptions": "^2.1.0",
+    "execa": "^9.5.2"
+  }
+}

@@ -1,0 +1,11 @@
+{
+    "name": "armpit-workspace",
+    "scripts": {
+        "build": "npm run build --workspaces --if-present",
+        "watch": "npm run watch -w=lib"
+    },
+    "workspaces": [
+        "lib",
+        "samples"
+    ]
+}

@@ -1,0 +1,17 @@
+{
+  "name": "armpit-samples",
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {},
+  "private": true,
+  "dependencies": {
+    "@azure/arm-resources": "^6.0.0",
+    "armpit": "file:../lib",
+    "yargs": "^17.7.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.24",
+    "@types/yargs": "^17.0.33",
+    "tsx": "^4.19.3"
+  }
+}
