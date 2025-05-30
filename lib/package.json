@@ -23,6 +23,12 @@
   "engines": {
     "node": ">=18"
   },
+  "files": [
+    "dist/index.js",
+    "dist/index.cjs",
+    "dist/index.d.ts",
+    "dist/index.d.cts"
+  ],
   "devDependencies": {
     "@types/node": "^22.15.24",
     "tsup": "^8.4.0",
