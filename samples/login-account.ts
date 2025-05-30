@@ -17,5 +17,4 @@ if (argv.s) {
   currentAccount ??= (await az.account.login())?.find(x => x.isDefault) ?? null;
 }
 
-console.log("Current account:");
-console.dir(currentAccount);
+console.log("Current account:", currentAccount);
