@@ -1,9 +1,7 @@
 import { az } from "armpit";
 
 let currentAccount = await az.account.show() ?? await az.account.login();
-if (!currentAccount) {
-  throw new Error("Account required");
-}
+if (!currentAccount) throw new Error("Account required");
 
 const locations = await az.account.listLocations();
 const mapPins = locations
@@ -15,6 +13,7 @@ console.log(`${mapPins.length} locations:`);
 for (let pin of mapPins) {
   console.log(` * ${pin.name} (${pin.lat}, ${pin.lon})`);
 }
+
 console.log("");
 
 // draw the location pins on a map 🗺️📌
