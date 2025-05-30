@@ -1,14 +1,9 @@
-import path from "node:path";
-import fs from "node:fs/promises";
+import { loadMyConfig } from "./myConfig";
 import yargs from "yargs";
 import { az } from "armpit";
 import type { ResourceGroup } from "@azure/arm-resources";
 
-interface MyConfig {
-  envs: { code: string, subscriptionId: string, tenantId: string }[]
-}
-const myConfig: MyConfig = JSON.parse(await fs.readFile(path.join(import.meta.dirname, "my-config.json"), "utf8"));
-const myEnvironments = myConfig.envs; // These are all of the environments this script may be run against.
+const myEnvironments = (await loadMyConfig()).envs;
 
 // Use CLI arguments or defaults to select an environment
 const argv = await yargs(process.argv.slice(2)).option({
