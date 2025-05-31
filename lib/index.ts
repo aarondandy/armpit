@@ -47,31 +47,29 @@ const ensureAzPrefix = function(templates: TemplateStringsArray) {
 const execaAzCliInvokerFactory: AzCliInvokerFactory = function<TOptions extends AzureCliOptions>(options: TOptions) {
   const env: NodeJS.ProcessEnv = {
     ...options.env,
-    // Force the CLI tools to give us parsable results
-    AZURE_CORE_OUTPUT: "json",
-    AZURE_CORE_ONLY_SHOW_ERRORS: "true",
-    // Attempt to avoid CLI interactivity when we are running a script
-    AZURE_CORE_LOGIN_EXPERIENCE_V2: "off",
+    AZURE_CORE_OUTPUT: "json", // request json by default
+    AZURE_CORE_ONLY_SHOW_ERRORS: "true", // the tools aren't always consistent so this is just simpler
+    AZURE_CORE_NO_COLOR: "true", // hopefully this reduces some noise in stderr and stdout
+    AZURE_CORE_LOGIN_EXPERIENCE_V2: "off", // these tools have their own way to select accounts
   };
 
-  if (options.defaultResourceGroup) {
-    env["AZURE_DEFAULTS_GROUP"] = options.defaultResourceGroup;
+  if (options.defaultResourceGroup != null) {
+    env.AZURE_DEFAULTS_GROUP = options.defaultResourceGroup;
   }
 
-  if (options.defaultLocation) {
-    env["AZURE_DEFAULTS_LOCATION"] = options.defaultLocation;
+  if (options.defaultLocation != null) {
+    env.AZURE_DEFAULTS_LOCATION = options.defaultLocation;
   }
 
   const execaInvoker = Execa$({
-    env: {
-      ...env
-    },
+    env,
   });
 
   return async (templates, ...expressions) => {
     if (options.forceAzCommandPrefix) {
       templates = ensureAzPrefix(templates);
     }
+
     let invocationResult;
     try {
       invocationResult = await execaInvoker(templates, ...expressions);
