@@ -2,7 +2,15 @@ import { $ as Execa$ } from "execa";
 import type { TemplateExpression, ExecaError, /*ExecaScriptMethod*/ } from "execa";
 import type { Location } from "@azure/arm-resources-subscriptions";
 //import type { ResourceGroup } from "@azure/arm-resources";
-import type { Account } from "./azureTypes.js";
+import {
+  type Account,
+  type SubscriptionId,
+  isSubscriptionId,
+  type SubscriptionIdOrName,
+  isSubscriptionIdOrName,
+  type TenantId,
+  isTenantId,
+} from "./azureTypes.js";
 
 export type { Account };
 
@@ -120,35 +128,119 @@ class AzCliAccount {
     }
   }
 
-  async list() : Promise<Account[]> {
-    return (await this.#azCli<Account[]>`account list`) ?? [];
+  async list(opt?: {all?: boolean, refresh?: boolean}) : Promise<Account[]> {
+    let flags: string[] | undefined;
+    if (opt) {
+      flags = [];
+      if (opt.all) {
+        flags.push("--all");
+      }
+      if (opt.refresh) {
+        flags.push("--refresh");
+      }
+    }
+
+    let results: Account[] | null;
+    if (flags && flags.length > 0) {
+      results = await this.#azCli.lax<Account[]>`account list ${flags}`;
+    } else {
+      results = await this.#azCli.lax<Account[]>`account list`;
+    }
+
+    return results ?? [];
   }
 
-  async set(subscription: string) {
-    await this.#azCli.lax<Account>`account set -s ${subscription}`;
+  async set(subscriptionIdOrName: SubscriptionIdOrName) {
+    await this.#azCli.lax<Account>`account set -s ${subscriptionIdOrName}`;
   }
 
-  async setOrLogin(subscription: string, tenantId?: string) {
-    const testAccount = (account: Account | null) => account != null && (account.id === subscription || account.name === subscription);
+  async setOrLogin(subscriptionIdOrName: SubscriptionIdOrName, tenantId?: TenantId): Promise<Account | null>;
+  async setOrLogin(criteria: {subscriptionId: SubscriptionId, tenantId?: TenantId}): Promise<Account | null>;
+  async setOrLogin(criteria: any, secondArg?: any): Promise<Account | null> {
+    let subscription: SubscriptionId | SubscriptionIdOrName;
+    let tenantId: string | undefined;
+    let filterAccountsToSubscription: (candidates: Account[]) => Account[];
 
-    let account = await this.show();
-    if (testAccount(account)) {
+    if (isSubscriptionIdOrName(criteria)) {
+      // overload: subscription, tenantId?
+      subscription = criteria;
+      if (secondArg != null) {
+        if (isTenantId(secondArg)) {
+          tenantId = secondArg;
+        } else {
+          throw new Error("Given tenant ID is not valid");
+        }
+      }
+
+      filterAccountsToSubscription = (accounts) => {
+        let results = accounts.filter(a => a.id === subscription);
+        if (results.length === 0) {
+          results = accounts.filter(a => a.name === subscription);
+        }
+
+        return results;
+      }
+    } else if ("subscriptionId" in criteria) {
+      // overload: {subscriptionId, tenantId?}
+      if (isSubscriptionId(criteria.subscriptionId)) {
+        subscription = criteria.subscriptionId;
+      } else {
+        throw new Error("Subscription ID is not valid");
+      }
+
+      if ("tenantId" in criteria) {
+        if (isTenantId(criteria.tenantId)) {
+          tenantId = criteria.tenantId;
+        } else {
+          throw new Error("Given tenant ID is not valid");
+        }
+      }
+
+      filterAccountsToSubscription = (accounts) => accounts.filter(a => a.id === subscription);
+    } else {
+      throw new Error("Arguments not supported");
+    }
+
+    const findAccount = (candidates: (Account | null)[]) => {
+      let matches = filterAccountsToSubscription(candidates.filter(a => a != null));
+      if (matches.length > 1 && tenantId) {
+        matches = matches.filter(a => a.tenantId == tenantId);
+      }
+
+      if (matches.length === 0) {
+        return null;
+      }
+
+      if (matches.length > 1) {
+        throw new Error(`Multiple account matches found: ${matches.map(a => a.id)}`);
+      }
+
+      const match = matches[0];
+      if (tenantId && match.tenantId != tenantId) {
+        throw new Error(`Account ${match.id} does not match expected tenant ${tenantId}`);
+      }
+
+      return match;
+    }
+
+    let account = findAccount([await this.show()]);
+    if (account) {
       return account;
     }
 
     // TODO: Consider refreshing and allowing a search of non-enabled accounts.
     //       That could come at a cost to performance though.
-    let accounts = await this.list();
-    account = accounts.find(testAccount) ?? null;
+    let knownAccounts = await this.list();
+    account = findAccount(knownAccounts);
     if (account) {
       await this.set(subscription);
       return account;
     }
 
-    console.debug("None of the logged in accounts match. Starting interactive login.");
+    console.debug("No current accounts match. Starting interactive login.");
 
-    accounts = await this.login(tenantId) ?? [];
-    account = accounts.find(testAccount) ?? null;
+    knownAccounts = await this.login(tenantId) ?? [];
+    account = findAccount(knownAccounts);
 
     if (!(account?.isDefault)) {
       await this.set(subscription);
@@ -212,7 +304,17 @@ function buildAzCli() {
   return result;
 }
 
-export const az = buildAzCli();
+const az = buildAzCli();
+
+export {
+  az,
+  isSubscriptionId,
+  isTenantId
+}
+
+/*export const az = buildAzCli();
+export const isSubscriptionId = isSubscriptionId;
+export const isTenantId = isTenantId;*/
 
 /*class AzCliGroup {
   #azCli: AzCli;

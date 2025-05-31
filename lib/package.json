@@ -36,6 +36,7 @@
   },
   "dependencies": {
     "@azure/arm-resources-subscriptions": "^2.1.0",
-    "execa": "^9.5.2"
+    "execa": "^9.5.2",
+    "uuid": "^11.1.0"
   }
 }

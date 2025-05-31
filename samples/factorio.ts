@@ -1,7 +1,7 @@
 import { az } from "armpit";
+import { loadMyEnvironment } from "./myConfig";
 
-const subscriptionId = "TODO";
-const tenantId = "TODO";
-await az.account.setOrLogin(subscriptionId, tenantId);
+const targetEnvironment = await loadMyEnvironment("samples");
+await az.account.setOrLogin(targetEnvironment);
 
 throw new Error("Coming soon!");
