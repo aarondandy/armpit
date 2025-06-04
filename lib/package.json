@@ -1,13 +1,25 @@
 {
   "name": "armpit",
   "version": "0.0.1",
-  "exports": "./dist/index.js",
-  "module": "dist/index.mjs",
-  "types": "dist/index.d.ts",
   "type": "module",
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js",
+      "types": "./dist/esm/index.d.ts"
+    }
+  },
   "scripts": {
-    "build": "tsup index.ts --format cjs --format esm --dts",
-    "watch": "tsup index.ts --watch --format esm --dts",
+    "clean": "rimraf dist",
+    "build": "run-s -l clean build:*",
+    "build:esm": "tsc",
+    "build:cjs": "tsc -p ./tsconfig.cjs.json",
+    "watch": "run-p -l watch:*",
+    "watch:esm": "tsc -w",
+    "watch:cjs": "tsc -w -p ./tsconfig.cjs.json",
     "lint": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -24,14 +36,12 @@
     "node": ">=18"
   },
   "files": [
-    "dist/index.js",
-    "dist/index.cjs",
-    "dist/index.d.ts",
-    "dist/index.d.cts"
+    "dist"
   ],
   "devDependencies": {
     "@types/node": "^22.15.24",
-    "tsup": "^8.4.0",
+    "npm-run-all": "^4.1.5",
+    "rimraf": "^6.0.1",
     "typescript": "^5.8.3"
   },
   "dependencies": {

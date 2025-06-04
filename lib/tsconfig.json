@@ -1,25 +1,27 @@
 {
   "compilerOptions": {
-    /* Visit https://aka.ms/tsconfig to read more about this file */
     "allowSyntheticDefaultImports": true,
+    "declaration": true,
+    "declarationMap": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
-    "noEmit": true,
+    "module": "NodeNext",
     "noImplicitAny": true,
     "noUnusedLocals": true,
-    "outDir": "./dist/",
+    "outDir": "./dist/esm",
     "preserveConstEnums": true,
+    "rootDir": "./src",
     "skipLibCheck": true,
+    "sourceMap": true,
     "strict": true,
     "strictFunctionTypes": true,
-    "target": "es2022",
+    "target": "ESNext"
   },
   "include": [
-    "index.ts"
+    "src/index.ts"
   ],
   "exclude": [
+    "dist",
     "node_modules",
     "**/*.spec.ts"
   ]
