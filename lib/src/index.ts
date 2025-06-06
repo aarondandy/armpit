@@ -1,6 +1,6 @@
 import type { TemplateExpression, ExecaError, /*ExecaScriptMethod*/ } from "execa";
 import type { Location } from "@azure/arm-resources-subscriptions";
-// import type { ResourceGroup } from "@azure/arm-resources";
+import type { ResourceGroup } from "@azure/arm-resources";
 import {
   type Account,
   type SubscriptionId,
@@ -35,8 +35,8 @@ interface AzGroupBound extends AzLocationBound {
 }
 
 interface AzGroupTools {
-  (name: string, location: string): Promise<AzGroupBound>;
-  (descriptor: {name: string, location: string}): Promise<AzGroupBound>;
+  (name: string, location: string): Promise<AzGroupBound & AzCliInvokable>;
+  (descriptor: {name: string, location: string}): Promise<AzGroupBound & AzCliInvokable>;
 }
 
 abstract class AzGroupToolsCallable {
@@ -58,11 +58,11 @@ class AzGroupTools extends AzGroupToolsCallable implements AzGroupTools {
     this.#azCli = azCli;
   }
 
-  protected fnImpl(name: string, location: string): Promise<AzGroupBound>;
-  protected fnImpl(descriptor: {name: string, location: string}): Promise<AzGroupBound>;
-  protected fnImpl(descriptor: string | { name: string, location?: string }, secondArg?: string): Promise<AzGroupBound> {
-    let name: string | unknown;
-    let location: string | unknown;
+  protected fnImpl(name: string, location: string): Promise<AzGroupBound & AzCliInvokable>;
+  protected fnImpl(descriptor: {name: string, location: string}): Promise<AzGroupBound & AzCliInvokable>;
+  protected async fnImpl(descriptor: string | { name: string, location?: string }, secondArg?: string): Promise<AzGroupBound & AzCliInvokable> {
+    let name: string | undefined;
+    let location: string | undefined;
 
     if (descriptor == null) {
       throw new Error("Name or descriptor is required");
@@ -94,7 +94,22 @@ class AzGroupTools extends AzGroupToolsCallable implements AzGroupTools {
       throw new Error("Location is required");
     }
 
-    throw new Error(`TODO ${name} ${location} ${this.#azCli.name}`);
+    let g = await this.show(name);
+    if (g == null) {
+      g = await this.create(name, location);
+    } else if (g.location !== location) {
+      throw new Error(`Existing group has location ${g.location} but ${location} was expected`);
+    }
+
+    throw new Error(`Got a group: ${g.name} ${g.location}`);
+  }
+
+  async show(name: string): Promise<ResourceGroup | null> {
+    return await this.#azCli.lax<ResourceGroup>`group show -n ${name}`;
+  };
+
+  async create(name: string, location: string) {
+    return await this.#azCli.strict<ResourceGroup>`group create -n ${name} -l ${location}`;
   }
 }
 
