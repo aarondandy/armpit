@@ -1,7 +1,6 @@
-import { $ as Execa$ } from "execa";
 import type { TemplateExpression, ExecaError, /*ExecaScriptMethod*/ } from "execa";
 import type { Location } from "@azure/arm-resources-subscriptions";
-//import type { ResourceGroup } from "@azure/arm-resources";
+// import type { ResourceGroup } from "@azure/arm-resources";
 import {
   type Account,
   type SubscriptionId,
@@ -11,102 +10,47 @@ import {
   type TenantId,
   isTenantId,
 } from "./azureTypes.js";
+import { execaAzCliInvokerFactory } from "./invoker.js";
 
 export type { Account };
-
-interface AzureCliOptions {
-  env?: NodeJS.ProcessEnv,
-  subscription?: string,
-  defaultLocation?: string,
-  defaultResourceGroup?: string,
-  laxParsing?: boolean,
-  forceAzCommandPrefix?: boolean,
-}
-
-type TagTemplateParameters = readonly [TemplateStringsArray, ...readonly TemplateExpression[]];
-type AzCliInvokerFactory = <TOptions extends AzureCliOptions>(options: TOptions) => <TResult>(...args: TagTemplateParameters) => Promise<TOptions extends { laxParsing: true } ? (TResult | null) : TResult>;
 
 interface AzCliInvokable {
   <T>(templates: TemplateStringsArray, ...expressions: readonly TemplateExpression[]): Promise<T>;
   strict: <T>(templates: TemplateStringsArray, ...expressions: readonly TemplateExpression[]) => Promise<T>;
   lax: <T>(templates: TemplateStringsArray, ...expressions: readonly TemplateExpression[]) => Promise<T | null>;
+  // TODO: Expose env vars so somebody can use Execa or zx directly.
 }
 
-const ensureAzPrefix = function(templates: TemplateStringsArray) {
-  if (templates.length > 0 && !/^\s*az\s/i.test(templates[0])) {
-    const [firstCookedTemplate, ...remainingCookedTemplates] = templates;
-    const [firstRawTemplate, ...remainingRawTemplates] = templates.raw;
-    templates = Object.assign([`az ${firstCookedTemplate}`, ...remainingCookedTemplates], {
-      raw: [`az ${firstRawTemplate}`, ...remainingRawTemplates]
-    });
-  }
+// interface AzGroupTools {
+//   (name: string, location: string): Promise<AzGroupBound>;
+//   (descriptor: {name: string, location: string}): Promise<AzGroupBound>;
+// }
 
-  return templates;
+interface AzAccountTools {
+  list(opt?: {all?: boolean, refresh?: boolean}): Promise<Account[]>;
+  listLocations(names?: string[]): Promise<Location[]>;
+  login(tenantId?: string): Promise<Account[] | null>;
+  set(subscriptionIdOrName: SubscriptionIdOrName): Promise<void>;
+  setOrLogin(subscriptionIdOrName: SubscriptionIdOrName, tenantId?: TenantId): Promise<Account | null>;
+  setOrLogin(criteria: {subscriptionId: SubscriptionId, tenantId?: TenantId}): Promise<Account | null>;
+  show(): Promise<Account | null>;
+  // TODO: access token
 }
 
-const execaAzCliInvokerFactory: AzCliInvokerFactory = function<TOptions extends AzureCliOptions>(options: TOptions) {
-  const env: NodeJS.ProcessEnv = {
-    ...options.env,
-    AZURE_CORE_OUTPUT: "json", // request json by default
-    AZURE_CORE_ONLY_SHOW_ERRORS: "true", // the tools aren't always consistent so this is just simpler
-    AZURE_CORE_NO_COLOR: "true", // hopefully this reduces some noise in stderr and stdout
-    AZURE_CORE_LOGIN_EXPERIENCE_V2: "off", // these tools have their own way to select accounts
-  };
-
-  if (options.defaultResourceGroup != null) {
-    env.AZURE_DEFAULTS_GROUP = options.defaultResourceGroup;
-  }
-
-  if (options.defaultLocation != null) {
-    env.AZURE_DEFAULTS_LOCATION = options.defaultLocation;
-  }
-
-  const execaInvoker = Execa$({
-    env,
-  });
-
-  return async (templates, ...expressions) => {
-    if (options.forceAzCommandPrefix) {
-      templates = ensureAzPrefix(templates);
-    }
-
-    let invocationResult;
-    try {
-      invocationResult = await execaInvoker(templates, ...expressions);
-    } catch (invocationError) {
-      if (options.laxParsing) {
-        const stderr = (<ExecaError>invocationError)?.stderr;
-        if (stderr && typeof stderr === "string" && /not\s*found/i.test(stderr)) {
-          return null;
-        }
-      }
-
-      throw invocationError;
-    }
-
-    const { stdout, stderr } = invocationResult;
-
-    if (stderr != null && stderr !== "") {
-      console.warn(stderr);
-    }
-
-    if (stdout == null || stdout === "") {
-      if (options.laxParsing) {
-        return null;
-      } else {
-        throw new Error("Resulting stream was empty");
-      }
-    } else if (typeof stdout === "string") {
-      return JSON.parse(stdout);
-    } else if (Array.isArray(stdout)) {
-      return JSON.parse((<string[]>stdout).join(""));
-    } else {
-      throw new Error("Failed to parse invocation result");
-    }
-  };
+interface AzGlobal {
+  //readonly group: AzGroupTools;
+  readonly account: AzAccountTools;
 }
 
-class AzCliAccount {
+// interface AzLocationBound {
+//   readonly location: string;
+// }
+
+// interface AzGroupBound extends AzLocationBound {
+//   readonly name: string;
+// }
+
+class AzCliAccount implements AzAccountTools {
   #azCli: AzCliInvokable;
 
   constructor(azCli: AzCliInvokable) {
@@ -288,15 +232,14 @@ function buildAzCli() {
     forceAzCommandPrefix: true,
     laxParsing: false,
   };
-  const strictFn = execaAzCliInvokerFactory(cliFnOptions);
-  const laxFn = execaAzCliInvokerFactory({ ...cliFnOptions, laxParsing: true });
-  const mainFn = strictFn; // TODO: there may be other overloads for this one
 
+  const invoker = execaAzCliInvokerFactory(cliFnOptions);
+  const mainFn = invoker.strict;
   const cliResult: AzCliInvokable = Object.assign(mainFn, {
-    strict: strictFn,
-    lax: laxFn
+    strict: invoker.strict,
+    lax: invoker.lax
   });
-  let result = Object.assign(cliResult, {
+  let result = Object.assign(cliResult, <AzGlobal>{
     account: new AzCliAccount(cliResult)
   });
   return result;
