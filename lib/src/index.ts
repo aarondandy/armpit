@@ -21,36 +21,84 @@ interface AzCliInvokable {
   // TODO: Expose env vars so somebody can use Execa or zx directly.
 }
 
-// interface AzGroupTools {
-//   (name: string, location: string): Promise<AzGroupBound>;
-//   (descriptor: {name: string, location: string}): Promise<AzGroupBound>;
-// }
-
-interface AzAccountTools {
-  list(opt?: {all?: boolean, refresh?: boolean}): Promise<Account[]>;
-  listLocations(names?: string[]): Promise<Location[]>;
-  login(tenantId?: string): Promise<Account[] | null>;
-  set(subscriptionIdOrName: SubscriptionIdOrName): Promise<void>;
-  setOrLogin(subscriptionIdOrName: SubscriptionIdOrName, tenantId?: TenantId): Promise<Account | null>;
-  setOrLogin(criteria: {subscriptionId: SubscriptionId, tenantId?: TenantId}): Promise<Account | null>;
-  show(): Promise<Account | null>;
-  // TODO: access token
-}
-
 interface AzGlobal {
-  //readonly group: AzGroupTools;
+  readonly group: AzGroupTools;
   readonly account: AzAccountTools;
 }
 
-// interface AzLocationBound {
-//   readonly location: string;
-// }
+interface AzLocationBound {
+  readonly location: string;
+}
 
-// interface AzGroupBound extends AzLocationBound {
-//   readonly name: string;
-// }
+interface AzGroupBound extends AzLocationBound {
+  readonly name: string;
+}
 
-class AzCliAccount implements AzAccountTools {
+interface AzGroupTools {
+  (name: string, location: string): Promise<AzGroupBound>;
+  (descriptor: {name: string, location: string}): Promise<AzGroupBound>;
+}
+
+abstract class AzGroupToolsCallable {
+  constructor() {
+    const closure = function(...args: any[]) {
+      return (closure as any as AzGroupToolsCallable).fnImpl(...args);
+    }
+    return Object.setPrototypeOf(closure, new.target.prototype);
+  }
+
+  protected abstract fnImpl(...args: any[]): any;
+}
+
+class AzGroupTools extends AzGroupToolsCallable implements AzGroupTools {
+  #azCli: AzCliInvokable;
+
+  constructor(azCli: AzCliInvokable) {
+    super();
+    this.#azCli = azCli;
+  }
+
+  protected fnImpl(name: string, location: string): Promise<AzGroupBound>;
+  protected fnImpl(descriptor: {name: string, location: string}): Promise<AzGroupBound>;
+  protected fnImpl(descriptor: string | { name: string, location?: string }, secondArg?: string): Promise<AzGroupBound> {
+    let name: string | unknown;
+    let location: string | unknown;
+
+    if (descriptor == null) {
+      throw new Error("Name or descriptor is required");
+    }
+
+    if (typeof descriptor === "string") {
+      // overload: string, location: string
+      name = descriptor;
+      location = secondArg;
+    } else if ("name" in descriptor) {
+      // overload: {name, location}
+      if (typeof descriptor.name === "string") {
+        name = descriptor.name;
+      }
+
+      if (typeof descriptor.location === "string") {
+        location = descriptor.location;
+      } else {
+        throw new Error("Location is required");
+      }
+    }
+
+    if (name == null) {
+      throw new Error("Group name is required");
+    }
+
+    if (location == null) {
+      // TODO: Can location be inherited if this.#azCli is AzLocationBound
+      throw new Error("Location is required");
+    }
+
+    throw new Error(`TODO ${name} ${location} ${this.#azCli.name}`);
+  }
+}
+
+class AzAccountTools {
   #azCli: AzCliInvokable;
 
   constructor(azCli: AzCliInvokable) {
@@ -240,7 +288,8 @@ function buildAzCli() {
     lax: invoker.lax
   });
   let result = Object.assign(cliResult, <AzGlobal>{
-    account: new AzCliAccount(cliResult)
+    account: new AzAccountTools(cliResult),
+    group: new AzGroupTools(cliResult)
   });
   return result;
 }
@@ -252,23 +301,3 @@ export {
   isSubscriptionId,
   isTenantId
 }
-
-/*export const az = buildAzCli();
-export const isSubscriptionId = isSubscriptionId;
-export const isTenantId = isTenantId;*/
-
-/*class AzCliGroup {
-  #azCli: AzCli;
-
-  constructor(azCli: AzCli) {
-    this.#azCli = azCli;
-  }
-
-  list() {
-    return this.#azCli<ResourceGroup[]>`group list`;
-  }
-
-  show(name: string) {
-    return this.#azCli<ResourceGroup | null>`group show --name ${name}`;
-  }
-}*/

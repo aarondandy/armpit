@@ -1,4 +1,4 @@
 import { az } from "armpit";
 
-var groups = az.group.list();
-;
+var group = az.group("test", "westus2");
+console.log("group", group);
