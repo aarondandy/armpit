@@ -3,14 +3,17 @@ import type { Location } from "@azure/arm-resources-subscriptions";
 import type { ResourceGroup } from "@azure/arm-resources";
 import {
   type Account,
+  type ResourceSummary,
   type SubscriptionId,
   isSubscriptionId,
   type SubscriptionIdOrName,
   isSubscriptionIdOrName,
   type TenantId,
   isTenantId,
+  isNamedLocationDescriptor,
 } from "./azureTypes.js";
-import { execaAzCliInvokerFactory } from "./invoker.js";
+import { ExistingGroupLocationConflictError, GroupNotEmptyError } from "./errors.js";
+import { execaAzCliInvokerFactory, type CliInvokers } from "./invoker.js";
 
 export type { Account };
 
@@ -39,10 +42,10 @@ interface AzGroupTools {
   (descriptor: {name: string, location: string}): Promise<AzGroupBound & AzCliInvokable>;
 }
 
-abstract class AzGroupToolsCallable {
+abstract class CallableClassBase {
   constructor() {
     const closure = function(...args: any[]) {
-      return (closure as any as AzGroupToolsCallable).fnImpl(...args);
+      return (closure as any as CallableClassBase).fnImpl(...args);
     }
     return Object.setPrototypeOf(closure, new.target.prototype);
   }
@@ -50,79 +53,144 @@ abstract class AzGroupToolsCallable {
   protected abstract fnImpl(...args: any[]): any;
 }
 
-class AzGroupTools extends AzGroupToolsCallable implements AzGroupTools {
-  #azCli: AzCliInvokable;
+class AzGroupTools extends CallableClassBase implements AzGroupTools {
+  #invokers: CliInvokers;
+  #context: { location?: string };
 
-  constructor(azCli: AzCliInvokable) {
+  constructor(invokers: CliInvokers, context: { location?: string }) {
     super();
-    this.#azCli = azCli;
+    this.#invokers = invokers;
+    this.#context = context;
   }
 
   protected fnImpl(name: string, location: string): Promise<AzGroupBound & AzCliInvokable>;
-  protected fnImpl(descriptor: {name: string, location: string}): Promise<AzGroupBound & AzCliInvokable>;
-  protected async fnImpl(descriptor: string | { name: string, location?: string }, secondArg?: string): Promise<AzGroupBound & AzCliInvokable> {
-    let name: string | undefined;
-    let location: string | undefined;
+  protected fnImpl(descriptor: { readonly name: string, readonly location: string}): Promise<AzGroupBound & AzCliInvokable>;
+  protected async fnImpl(nameOrDescriptor: string | { readonly name: string, readonly location: string }, secondArg?: string): Promise<AzGroupBound & AzCliInvokable> {
+    let descriptor: { name: string, location: string };
 
-    if (descriptor == null) {
+    if (nameOrDescriptor == null) {
       throw new Error("Name or descriptor is required");
     }
 
-    if (typeof descriptor === "string") {
+    if (typeof nameOrDescriptor === "string") {
       // overload: string, location: string
-      name = descriptor;
-      location = secondArg;
-    } else if ("name" in descriptor) {
+      descriptor = {
+        name: nameOrDescriptor,
+        location: secondArg ?? this.#getRequiredDefaultLocation()
+      };
+    } else if ("name" in nameOrDescriptor) {
       // overload: {name, location}
-      if (typeof descriptor.name === "string") {
-        name = descriptor.name;
+
+      if (typeof nameOrDescriptor.name !== "string") {
+        throw new Error("Group name is required");
       }
 
-      if (typeof descriptor.location === "string") {
-        location = descriptor.location;
-      } else {
-        throw new Error("Location is required");
+      if (typeof nameOrDescriptor.location !== "string") {
+        throw new Error("An explicit location is required");
       }
+
+      descriptor = nameOrDescriptor;
+    } else {
+      throw new Error("Unexpected arguments");
     }
 
-    if (name == null) {
-      throw new Error("Group name is required");
-    }
-
-    if (location == null) {
+    if (descriptor.location == null) {
       // TODO: Can location be inherited if this.#azCli is AzLocationBound
       throw new Error("Location is required");
     }
 
-    let g = await this.show(name);
+    let g = await this.show(descriptor.name);
     if (g == null) {
-      g = await this.create(name, location);
-    } else if (g.location !== location) {
-      throw new Error(`Existing group has location ${g.location} but ${location} was expected`);
+      g = await this.create(descriptor.name, descriptor.location);
+    } else if (g.location !== descriptor.location) {
+      throw new ExistingGroupLocationConflictError(g, descriptor.location);
     }
 
-    throw new Error(`Got a group: ${g.name} ${g.location}`);
+    if (!isNamedLocationDescriptor(g)) {
+      throw new Error("Resource group is not correctly formed");
+    }
+
+    return this.#cli(g);
   }
 
   async show(name: string): Promise<ResourceGroup | null> {
-    return await this.#azCli.lax<ResourceGroup>`group show -n ${name}`;
+    return await this.#invokers.lax<ResourceGroup>`group show --name ${name}`;
   };
 
+  async exists(name: string): Promise<boolean> {
+    return !!(await this.#invokers.lax<boolean>`group exists --name ${name}`);
+  }
+
   async create(name: string, location: string) {
-    return await this.#azCli.strict<ResourceGroup>`group create -n ${name} -l ${location}`;
+    return await this.#invokers.strict<ResourceGroup>`group create --name ${name} -l ${location}`;
+  }
+
+  async delete(name: string) {
+    const rg = await this.show(name);
+    if (rg == null) {
+      return false;
+    }
+
+    if (typeof rg.name !== "string") {
+      throw new Error(`Loaded resource group for ${name} is not valid`);
+    } else if (rg.name !== name) {
+      throw new Error(`Loaded resource group for ${name} has a conflicting name: ${rg.name}`);
+    }
+
+    const jmesQuery = "[].{id: id, name: name, type: type}"; // passes as an expression for correct escaping
+    const resources = await this.#invokers.strict<ResourceSummary[]>`resource list --resource-group ${name} --query ${jmesQuery}`;
+    if (resources.length !== 0) {
+      throw new GroupNotEmptyError(name, resources);
+    }
+
+    await this.#invokers.strict<void>`group delete --yes --name ${name}`;
+    return true;
+  }
+
+  #cli(descriptor: { readonly name: string, readonly location: string}): AzGroupBound & AzCliInvokable {
+    const invoker = execaAzCliInvokerFactory({
+      forceAzCommandPrefix: true,
+      laxParsing: false,
+      defaultLocation: descriptor.location,
+      defaultResourceGroup: descriptor.name,
+    });
+
+    const { name: groupName, ...descriptorWithoutName } = descriptor;
+
+    const mainFn = invoker.strict;
+    const cliResult = Object.assign(mainFn, descriptorWithoutName);
+    Object.defineProperty(cliResult, "name", {
+      value: groupName,
+      configurable: true,
+      enumerable: true,
+      writable: false,
+    });
+    return Object.assign(cliResult, {
+      strict: invoker.strict,
+      lax: invoker.lax
+    });
+  }
+
+  #getRequiredDefaultLocation(): string {
+    const location = this.#context.location;
+    if (location == null) {
+      throw new Error("No required default location has been set");
+    }
+
+    return location;
   }
 }
 
 class AzAccountTools {
-  #azCli: AzCliInvokable;
+  #invokers: CliInvokers;
 
-  constructor(azCli: AzCliInvokable) {
-    this.#azCli = azCli;
+  constructor(invokers: CliInvokers) {
+    this.#invokers = invokers;
   }
 
   async show() {
     try {
-      return await this.#azCli.lax<Account>`account show`;
+      return await this.#invokers.lax<Account>`account show`;
     } catch (invocationError) {
       const stderr = (<ExecaError>invocationError)?.stderr;
       if (stderr && typeof stderr === "string" && (/az login|az account set/i).test(stderr)) {
@@ -147,16 +215,16 @@ class AzAccountTools {
 
     let results: Account[] | null;
     if (flags && flags.length > 0) {
-      results = await this.#azCli.lax<Account[]>`account list ${flags}`;
+      results = await this.#invokers.lax<Account[]>`account list ${flags}`;
     } else {
-      results = await this.#azCli.lax<Account[]>`account list`;
+      results = await this.#invokers.lax<Account[]>`account list`;
     }
 
     return results ?? [];
   }
 
   async set(subscriptionIdOrName: SubscriptionIdOrName) {
-    await this.#azCli.lax<Account>`account set -s ${subscriptionIdOrName}`;
+    await this.#invokers.lax<Account>`account set -s ${subscriptionIdOrName}`;
   }
 
   async setOrLogin(subscriptionIdOrName: SubscriptionIdOrName, tenantId?: TenantId): Promise<Account | null>;
@@ -259,9 +327,9 @@ class AzAccountTools {
     try {
       let loginAccounts : Account[] | null;
       if (tenantId) {
-        loginAccounts = await this.#azCli<Account[]>`login --tenant ${tenantId}`;
+        loginAccounts = await this.#invokers.strict<Account[]>`login --tenant ${tenantId}`;
       } else {
-        loginAccounts = await this.#azCli<Account[]>`login`;
+        loginAccounts = await this.#invokers.strict<Account[]>`login`;
       }
 
       return loginAccounts;
@@ -280,39 +348,37 @@ class AzAccountTools {
     let results : Location[];
     if (names != null && names.length > 0) {
       const queryFilter = `[? contains([${names.map((n) => `'${n}'`).join(",")}],name)]`;
-      results = await this.#azCli<Location[]>`account list-locations --query ${queryFilter}`;
+      results = await this.#invokers.strict<Location[]>`account list-locations --query ${queryFilter}`;
     }
     else {
-      results = await this.#azCli<Location[]>`account list-locations`;
+      results = await this.#invokers.strict<Location[]>`account list-locations`;
     }
 
     return results ?? [];
   }
 }
 
-function buildAzCli() {
-  const cliFnOptions = {
+const az = (function(): AzGlobal & AzCliInvokable {
+  const invoker = execaAzCliInvokerFactory({
     forceAzCommandPrefix: true,
     laxParsing: false,
-  };
-
-  const invoker = execaAzCliInvokerFactory(cliFnOptions);
+  });
   const mainFn = invoker.strict;
-  const cliResult: AzCliInvokable = Object.assign(mainFn, {
+  const cliResult = Object.assign(mainFn, {
+    account: new AzAccountTools(invoker),
+    group: new AzGroupTools(invoker, { })
+  });
+  let result = Object.assign(cliResult, {
     strict: invoker.strict,
     lax: invoker.lax
   });
-  let result = Object.assign(cliResult, <AzGlobal>{
-    account: new AzAccountTools(cliResult),
-    group: new AzGroupTools(cliResult)
-  });
   return result;
-}
-
-const az = buildAzCli();
+})();
 
 export {
   az,
   isSubscriptionId,
-  isTenantId
+  isTenantId,
+  ExistingGroupLocationConflictError,
+  GroupNotEmptyError,
 }

@@ -1,4 +1,4 @@
-import { loadMyConfig } from "./myConfig";
+import { loadMyConfig } from "./myConfig.js";
 import yargs from "yargs";
 import { az } from "armpit";
 import type { ResourceGroup } from "@azure/arm-resources";

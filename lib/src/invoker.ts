@@ -19,18 +19,18 @@ function ensureAzPrefix(templates: TemplateStringsArray) {
   return templates;
 }
 
-interface Invokers {
+export interface CliInvokers {
   strict: <T>(templates: TemplateStringsArray, ...expressions: readonly TemplateExpression[]) => Promise<T>;
   lax: <T>(templates: TemplateStringsArray, ...expressions: readonly TemplateExpression[]) => Promise<T | null>;
 }
 
-interface InvokerFnFactoryOptions {
-  laxParsing?: boolean
+interface CliInvokerFnFactoryOptions {
+  laxResultHandling?: boolean
 }
 
-type InvokerFnFactory = <TOptions extends InvokerFnFactoryOptions>(options: TOptions) => <TResult>(templates: TemplateStringsArray, ...expressions: readonly TemplateExpression[]) => Promise<TOptions extends { laxParsing: true } ? (TResult | null) : TResult>;
+type InvokerFnFactory = <TOptions extends CliInvokerFnFactoryOptions>(options: TOptions) => <TResult>(templates: TemplateStringsArray, ...expressions: readonly TemplateExpression[]) => Promise<TOptions extends { laxParsing: true } ? (TResult | null) : TResult>;
 
-export function execaAzCliInvokerFactory<TInvokerOptions extends InvokerOptions>(options: TInvokerOptions): Invokers {
+export function execaAzCliInvokerFactory<TInvokerOptions extends InvokerOptions>(options: TInvokerOptions): CliInvokers {
   const env: NodeJS.ProcessEnv = {
     ...options.env,
     AZURE_CORE_OUTPUT: "json", // request json by default
@@ -52,7 +52,7 @@ export function execaAzCliInvokerFactory<TInvokerOptions extends InvokerOptions>
   });
 
 
-  const invokerFnBuilder: InvokerFnFactory = <TFnOptions extends InvokerFnFactoryOptions>(fnOptions: TFnOptions) => {
+  const invokerFnBuilder: InvokerFnFactory = <TFnOptions extends CliInvokerFnFactoryOptions>(fnOptions: TFnOptions) => {
     return async (templates: TemplateStringsArray, ...expressions: readonly TemplateExpression[]) => {
       if (options.forceAzCommandPrefix) {
         templates = ensureAzPrefix(templates);
@@ -62,7 +62,7 @@ export function execaAzCliInvokerFactory<TInvokerOptions extends InvokerOptions>
       try {
         invocationResult = await execaInvoker(templates, ...expressions);
       } catch (invocationError) {
-        if (fnOptions.laxParsing) {
+        if (fnOptions.laxResultHandling) {
           const stderr = (<ExecaError>invocationError)?.stderr;
           if (stderr && typeof stderr === "string" && /not\s*found/i.test(stderr)) {
             return null;
@@ -79,11 +79,7 @@ export function execaAzCliInvokerFactory<TInvokerOptions extends InvokerOptions>
       }
 
       if (stdout == null || stdout === "") {
-        if (fnOptions.laxParsing) {
-          return null;
-        } else {
-          throw new Error("Resulting stream was empty");
-        }
+        return null; // even for lax rules because what else should be done with a blank response from delete for example.
       } else if (typeof stdout === "string") {
         return JSON.parse(stdout);
       } else if (Array.isArray(stdout)) {
@@ -96,6 +92,6 @@ export function execaAzCliInvokerFactory<TInvokerOptions extends InvokerOptions>
 
   return {
     strict: invokerFnBuilder({ }),
-    lax: invokerFnBuilder({ laxParsing: true }),
+    lax: invokerFnBuilder({ laxResultHandling: true }),
   }
 }

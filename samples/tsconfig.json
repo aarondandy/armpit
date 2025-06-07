@@ -3,9 +3,7 @@
     /* Visit https://aka.ms/tsconfig to read more about this file */
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "module": "es2022",
-    "moduleResolution": "node",
+    "module": "NodeNext",
     "noEmit": true,
     "noImplicitAny": true,
     "noUnusedLocals": true,

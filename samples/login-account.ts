@@ -17,4 +17,4 @@ if (argv.s) {
   currentAccount ??= (await az.account.login())?.find(x => x.isDefault) ?? null;
 }
 
-console.log("Current account:", currentAccount);
+console.log("*Hacker voice* I'm in:", currentAccount);

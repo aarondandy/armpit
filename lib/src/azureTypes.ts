@@ -1,4 +1,5 @@
 import { validate as uuidValidate } from 'uuid';
+import type { Resource } from "@azure/arm-resources";
 import type { Subscription } from "@azure/arm-resources-subscriptions";
 
 export type Account = Pick<Subscription, "id" | "managedByTenants" | "state" | "tenantId"> & {
@@ -11,6 +12,8 @@ export type Account = Pick<Subscription, "id" | "managedByTenants" | "state" | "
     readonly type: string
   }
 }
+
+export type ResourceSummary = Pick<Resource, "id" | "name" | "type">;
 
 export type SubscriptionId = string;
 export function isSubscriptionId(value: unknown): value is SubscriptionId {
@@ -25,4 +28,8 @@ export function isSubscriptionIdOrName(value: unknown): value is SubscriptionIdO
 export type TenantId = string;
 export function isTenantId(value: unknown): value is TenantId {
   return uuidValidate(value);
+}
+
+export function isNamedLocationDescriptor(group?: any): group is { name: string, location: string } {
+  return group != null && typeof group.name === "string" && typeof group.location === "string";
 }
