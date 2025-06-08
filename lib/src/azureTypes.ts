@@ -31,8 +31,8 @@ export function isTenantId(value: unknown): value is TenantId {
   return uuidValidate(value);
 }
 
-export function isNamedLocationDescriptor(group?: any): group is { name: string, location: string } {
-  return group != null && typeof group.name === "string" && typeof group.location === "string";
+export function isNamedLocationDescriptor(resource?: any): resource is { name: string, location: string } {
+  return resource != null && typeof resource.name === "string" && typeof resource.location === "string";
 }
 
 export type VirtualNetworkCreateResult = {

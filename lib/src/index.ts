@@ -100,18 +100,18 @@ class AzGroupTools extends CallableClassBase implements AzGroupTools {
       throw new Error("Location is required");
     }
 
-    let g = await this.show(descriptor.name);
-    if (g == null) {
-      g = await this.create(descriptor.name, descriptor.location);
-    } else if (g.location !== descriptor.location) {
-      throw new ExistingGroupLocationConflictError(g, descriptor.location);
+    let group = await this.show(descriptor.name);
+    if (group == null) {
+      group = await this.create(descriptor.name, descriptor.location);
+    } else if (group.location !== descriptor.location) {
+      throw new ExistingGroupLocationConflictError(group, descriptor.location);
     }
 
-    if (!isNamedLocationDescriptor(g)) {
+    if (!isNamedLocationDescriptor(group)) {
       throw new Error("Resource group is not correctly formed");
     }
 
-    return this.#cli(g);
+    return this.#cli(group);
   }
 
   async show(name: string): Promise<ResourceGroup | null> {
@@ -127,15 +127,15 @@ class AzGroupTools extends CallableClassBase implements AzGroupTools {
   }
 
   async delete(name: string) {
-    const rg = await this.show(name);
-    if (rg == null) {
+    const group = await this.show(name);
+    if (group == null) {
       return false;
     }
 
-    if (typeof rg.name !== "string") {
+    if (typeof group.name !== "string") {
       throw new Error(`Loaded resource group for ${name} is not valid`);
-    } else if (rg.name !== name) {
-      throw new Error(`Loaded resource group for ${name} has a conflicting name: ${rg.name}`);
+    } else if (group.name !== name) {
+      throw new Error(`Loaded resource group for ${name} has a conflicting name: ${group.name}`);
     }
 
     const jmesQuery = "[].{id: id, name: name, type: type}"; // passes as an expression for correct escaping

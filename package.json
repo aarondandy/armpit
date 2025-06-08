@@ -3,6 +3,7 @@
     "scripts": {
         "build": "npm run build --workspaces --if-present",
         "clean": "npm run clean --workspaces --if-present",
+        "test": "npm run test -w=lib",
         "watch": "npm run watch -w=lib"
     },
     "workspaces": [

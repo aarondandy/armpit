@@ -9,9 +9,9 @@ await az.account.setOrLogin(targetEnvironment);
 const rg = await az.group(`videogames-${targetLocation}`, targetLocation);
 
 const vnetPrefix = "10.64.0.0/16";
-const { newVNet: vnet } = await rg<VirtualNetworkCreateResult>`network vnet create
-  -n vnet-videogames-${rg.location}
-  --address-prefixes ${vnetPrefix}`;
+const vnet = await rg<VirtualNetworkCreateResult>`network vnet create
+  -n vnet-videogames-${rg.location} --address-prefixes ${vnetPrefix}`
+  .then(r => r.newVNet); // TODO: find a better way
 console.log(`[vnet] vnet ${vnet.name} ${vnet.addressSpace?.addressPrefixes?.[0]}`);
 
 async function buildSubnet(name: string, n: number) {
@@ -22,10 +22,12 @@ async function buildSubnet(name: string, n: number) {
   console.log(`[vnet] subnet ${subnet.name} ${subnet.addressPrefix}`);
   return subnet;
 }
+const subnetDefault = buildSubnet("default", 0);
+const subnetVms = buildSubnet("vms", 8);
 
-await Promise.all([
-  buildSubnet("default", 1),
-  buildSubnet("vms", 8)
-]);
+
+// TODO: pip
+// TODO: nic
+// TODO: vm
 
 // TODO: Add tags to this example
