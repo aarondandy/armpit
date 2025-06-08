@@ -1,6 +1,7 @@
 import { validate as uuidValidate } from 'uuid';
 import type { Resource } from "@azure/arm-resources";
 import type { Subscription } from "@azure/arm-resources-subscriptions";
+import type { VirtualNetwork } from "@azure/arm-network";
 
 export type Account = Pick<Subscription, "id" | "managedByTenants" | "state" | "tenantId"> & {
   readonly cloudName?: "AzureCloud" | (string & {}),
@@ -33,3 +34,7 @@ export function isTenantId(value: unknown): value is TenantId {
 export function isNamedLocationDescriptor(group?: any): group is { name: string, location: string } {
   return group != null && typeof group.name === "string" && typeof group.location === "string";
 }
+
+export type VirtualNetworkCreateResult = {
+  newVNet: VirtualNetwork
+};

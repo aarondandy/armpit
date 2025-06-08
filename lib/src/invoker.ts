@@ -1,4 +1,18 @@
-import { $ as Execa$, type ExecaError, type TemplateExpression } from "execa";
+import { $ as Execa$ } from "execa";
+import type {
+  ExecaError,
+  Result as ExecaResult,
+  SyncResult as ExecaSyncResult,
+  TemplateExpression as ExecaTemplateExpression
+} from "execa";
+
+type AzTemplateExpressionItem =
+  | undefined // Many properties on ARM types are optional, which is annoying
+  | string
+  | number
+  | ExecaResult
+  | ExecaSyncResult;
+export type AzTemplateExpression = AzTemplateExpressionItem | readonly AzTemplateExpressionItem[]
 
 interface InvokerOptions {
   env?: NodeJS.ProcessEnv,
@@ -20,15 +34,15 @@ function ensureAzPrefix(templates: TemplateStringsArray) {
 }
 
 export interface CliInvokers {
-  strict: <T>(templates: TemplateStringsArray, ...expressions: readonly TemplateExpression[]) => Promise<T>;
-  lax: <T>(templates: TemplateStringsArray, ...expressions: readonly TemplateExpression[]) => Promise<T | null>;
+  strict: <T>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]) => Promise<T>;
+  lax: <T>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]) => Promise<T | null>;
 }
 
 interface CliInvokerFnFactoryOptions {
   laxResultHandling?: boolean
 }
 
-type InvokerFnFactory = <TOptions extends CliInvokerFnFactoryOptions>(options: TOptions) => <TResult>(templates: TemplateStringsArray, ...expressions: readonly TemplateExpression[]) => Promise<TOptions extends { laxParsing: true } ? (TResult | null) : TResult>;
+type InvokerFnFactory = <TOptions extends CliInvokerFnFactoryOptions>(options: TOptions) => <TResult>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]) => Promise<TOptions extends { laxParsing: true } ? (TResult | null) : TResult>;
 
 export function execaAzCliInvokerFactory<TInvokerOptions extends InvokerOptions>(options: TInvokerOptions): CliInvokers {
   const env: NodeJS.ProcessEnv = {
@@ -51,16 +65,15 @@ export function execaAzCliInvokerFactory<TInvokerOptions extends InvokerOptions>
     env,
   });
 
-
   const invokerFnBuilder: InvokerFnFactory = <TFnOptions extends CliInvokerFnFactoryOptions>(fnOptions: TFnOptions) => {
-    return async (templates: TemplateStringsArray, ...expressions: readonly TemplateExpression[]) => {
+    return async (templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]) => {
       if (options.forceAzCommandPrefix) {
         templates = ensureAzPrefix(templates);
       }
 
       let invocationResult;
       try {
-        invocationResult = await execaInvoker(templates, ...expressions);
+        invocationResult = await execaInvoker(templates, ...(expressions as ExecaTemplateExpression[]));
       } catch (invocationError) {
         if (fnOptions.laxResultHandling) {
           const stderr = (<ExecaError>invocationError)?.stderr;

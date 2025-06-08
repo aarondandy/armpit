@@ -1,4 +1,4 @@
-import type { TemplateExpression, ExecaError, /*ExecaScriptMethod*/ } from "execa";
+import type { ExecaError, /*ExecaScriptMethod*/ } from "execa";
 import type { Location } from "@azure/arm-resources-subscriptions";
 import type { ResourceGroup } from "@azure/arm-resources";
 import {
@@ -11,16 +11,17 @@ import {
   type TenantId,
   isTenantId,
   isNamedLocationDescriptor,
+  type VirtualNetworkCreateResult,
 } from "./azureTypes.js";
 import { ExistingGroupLocationConflictError, GroupNotEmptyError } from "./errors.js";
-import { execaAzCliInvokerFactory, type CliInvokers } from "./invoker.js";
+import { execaAzCliInvokerFactory, type CliInvokers, type AzTemplateExpression } from "./invoker.js";
 
-export type { Account };
+export type { Account, VirtualNetworkCreateResult };
 
 interface AzCliInvokable {
-  <T>(templates: TemplateStringsArray, ...expressions: readonly TemplateExpression[]): Promise<T>;
-  strict: <T>(templates: TemplateStringsArray, ...expressions: readonly TemplateExpression[]) => Promise<T>;
-  lax: <T>(templates: TemplateStringsArray, ...expressions: readonly TemplateExpression[]) => Promise<T | null>;
+  <T>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]): Promise<T>;
+  strict: <T>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]) => Promise<T>;
+  lax: <T>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]) => Promise<T | null>;
   // TODO: Expose env vars so somebody can use Execa or zx directly.
 }
 
