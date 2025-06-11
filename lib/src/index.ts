@@ -13,8 +13,10 @@ import {
   isNamedLocationDescriptor,
   type VirtualNetworkCreateResult,
 } from "./azureTypes.js";
+import { NameHash } from "./nameHash.js";
 import { ExistingGroupLocationConflictError, GroupNotEmptyError } from "./errors.js";
 import { execaAzCliInvokerFactory, type CliInvokers, type AzTemplateExpression } from "./invoker.js";
+import { CallableClassBase } from "./utils.js";
 
 export type { Account, VirtualNetworkCreateResult };
 
@@ -41,17 +43,6 @@ interface AzGroupBound extends AzLocationBound {
 interface AzGroupTools {
   (name: string, location: string): Promise<AzGroupBound & AzCliInvokable>;
   (descriptor: {name: string, location: string}): Promise<AzGroupBound & AzCliInvokable>;
-}
-
-abstract class CallableClassBase {
-  constructor() {
-    const closure = function(...args: any[]) {
-      return (closure as any as CallableClassBase).fnImpl(...args);
-    }
-    return Object.setPrototypeOf(closure, new.target.prototype);
-  }
-
-  protected abstract fnImpl(...args: any[]): any;
 }
 
 class AzGroupTools extends CallableClassBase implements AzGroupTools {
@@ -380,6 +371,7 @@ export {
   az,
   isSubscriptionId,
   isTenantId,
+  NameHash,
   ExistingGroupLocationConflictError,
   GroupNotEmptyError,
 }

@@ -1,4 +1,4 @@
-import { az, type VirtualNetworkCreateResult } from "armpit";
+import { az, NameHash, type VirtualNetworkCreateResult } from "armpit";
 import type { Subnet } from "@azure/arm-network";
 import { loadMyEnvironment } from "./myConfig.js";
 
@@ -6,7 +6,10 @@ const targetEnvironment = await loadMyEnvironment("samples");
 const targetLocation = "westus2";
 await az.account.setOrLogin(targetEnvironment);
 
+const subHash = new NameHash(targetEnvironment.subscriptionId);
+
 const rg = await az.group(`videogames-${targetLocation}`, targetLocation);
+const rgHash = subHash.concat(rg.name);
 
 const vnetPrefix = "10.64.0.0/16";
 const vnet = await rg<VirtualNetworkCreateResult>`network vnet create
@@ -25,6 +28,8 @@ async function buildSubnet(name: string, n: number) {
 const subnetDefault = buildSubnet("default", 0);
 const subnetVms = buildSubnet("vms", 8);
 
+const serverName = `factorio-${rgHash}`;
+console.log("TODO: make server", serverName);
 
 // TODO: pip
 // TODO: nic
