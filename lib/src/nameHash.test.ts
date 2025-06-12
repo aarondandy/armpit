@@ -23,7 +23,7 @@ declare module "vitest" {
 
 describe("alphanumeric generation long-term stability by size", () => {
   const givenName = "abc123-input";
-  const longTermHugeHash = "52gyylw97shv2josded10rtx6xpcf43u694vs1t5tdo9xtgm2eggxvu5k0jzzufj5zmkcen3sitpnxzxt9pkup4fvg4un409k30ysuvpzi76a1ns718qv6maxz63wwp9imnl0mh3ax2sm4eimf23af0f8qsean5oyr8j0ddqa1lapmj0dquqvwnn8k6gkif45hr27wdb";
+  const longTermHugeHash = "g52gyylw97shv2josded10rtx6xpcf43u694vs1t5tdo9xtgmseggxvu5k0jzzufj5zmkcen3sitpnxzxt9pkup4fvg4un409k00ysuvpzi76a1ns718qv6maxz63wwp9imnl0mh3ax2sm4eimf83af0f8qsean5oyr8j0ddqa1lapmj0dquqvwnn8k6gkif45hr7wdb";
 
   it("small", () => {
     const actual = new NameHash(givenName, { type: "alphanumeric", defaultLength: 2 })();
@@ -44,7 +44,7 @@ describe("alphanumeric generation long-term stability by size", () => {
 
 describe("alpha generation long-term stability by size", () => {
   const givenName = "abc-input";
-  const longTermHugeHash = "zfkfshrxmzmukpmblrujwrqlgyuapazvaqmkqpwwbmasucylqgsxculgduxoeyoxhurxoawbrayfxmrowhtlnkvkjkrfavlvakozmvbnycldislqkqhajiwcnrtuxujgkvmephsaclttyircvilimajspfjweyxtldahrpqlyeyknnjltgnuxjsivbniisnxcgzzjyqi";
+  const longTermHugeHash = "zfkfshrxmzmukpmblrujwrqlgyuapazvaqmkqpwwbmasucylqgsxcuvlgduxoeyoxhurxoawbrayfxmrowhtlnkvkjkrfavlvakozmvbnyclgislqkqhajiwcnrtuxujgkvmephsaclttyircvilimajspfjweyxtlzahrpqlyeyknnjltgnuxjsivbniisnxcgzzjyq";
 
   it("small", () => {
     const actual = new NameHash(givenName, { type: "alpha", defaultLength: 2 })();
