@@ -1,5 +1,5 @@
 import { az, ExistingGroupLocationConflictError, GroupNotEmptyError } from "armpit";
-import { loadMyEnvironment } from "./myConfig.js";
+import { loadMyEnvironment } from "./utils/state.js";
 
 // An active account and default subscription are needed to get started.
 const targetEnvironment = await loadMyEnvironment("samples");

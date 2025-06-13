@@ -1,7 +1,7 @@
 import { validate as uuidValidate } from 'uuid';
 import type { Resource } from "@azure/arm-resources";
 import type { Subscription } from "@azure/arm-resources-subscriptions";
-import type { VirtualNetwork } from "@azure/arm-network";
+import type { VirtualNetwork, PublicIPAddress, NetworkInterface, NetworkSecurityGroup } from "@azure/arm-network";
 
 export type Account = Pick<Subscription, "id" | "managedByTenants" | "state" | "tenantId"> & {
   readonly cloudName?: "AzureCloud" | (string & {}),
@@ -38,3 +38,15 @@ export function isNamedLocationDescriptor(resource?: any): resource is { name: s
 export type VirtualNetworkCreateResult = {
   newVNet: VirtualNetwork
 };
+
+export type PublicIPAddressCreateResult = {
+  publicIp: PublicIPAddress
+};
+
+export type NetworkInterfaceCreateResult = {
+  NewNIC: NetworkInterface
+};
+
+export type NetworkSecurityGroupCreateResult = {
+  NewNSG: NetworkSecurityGroup
+}

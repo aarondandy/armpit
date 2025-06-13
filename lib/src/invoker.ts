@@ -71,6 +71,8 @@ export function execaAzCliInvokerFactory<TInvokerOptions extends InvokerOptions>
         templates = ensureAzPrefix(templates);
       }
 
+      // TODO: coerce nullish expressions into "" to simplify usage ... but maybe only if it has lax arg handling configured
+
       let invocationResult;
       try {
         invocationResult = await execaInvoker(templates, ...(expressions as ExecaTemplateExpression[]));
