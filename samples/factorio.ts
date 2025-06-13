@@ -7,7 +7,11 @@ import {
   type NetworkSecurityGroupCreateResult,
 } from "armpit";
 import type { Subnet, VirtualNetwork, ApplicationSecurityGroup } from "@azure/arm-network";
-import type { VirtualMachinesCreateOrUpdateResponse, VirtualMachine, DataDisk } from "@azure/arm-compute";
+import type {
+  VirtualMachinesCreateOrUpdateResponse,
+  VirtualMachine,
+  Disk,
+  VirtualMachineExtension } from "@azure/arm-compute";
 import { loadMyEnvironment, loadState, saveState } from "./utils/state.js";
 
 // Environment & Subscription
@@ -99,10 +103,21 @@ type VirtualMachineCreateResult = {
   zones: string
 };
 
+const osDisk = await rg<Disk>`disk create
+  -n osdisk-${state.serverName}
+  --hyper-v-generation V2
+  --os-type Linux
+  --image-reference Canonical:ubuntu-24_04-lts:server:latest
+  --sku Premium_LRS --size-gb 64`;
+console.log(`[vm] os disk ${osDisk.name}`);
+
+const vmName = `vm-${state.serverName}`; // TODO: it would be better to get this from the vm variable
 const vm = await rg<VirtualMachineCreateResult>`vm create
-  -n vm-${state.serverName} --computer-name ${state.serverName}
+  -n ${vmName} --computer-name ${state.serverName}
+  --size Standard_D2als_v6
   --nics ${nic.id}
-  --size Standard_D2als_v6`;
+  --attach-os-disk ${osDisk.name} --os-type Linux
+  --assign-identity [system]`;
   // TOOD: osDisk
   // TODO: use new premium disks
   // TODO: base os image should be small
@@ -111,6 +126,11 @@ const vm = await rg<VirtualMachineCreateResult>`vm create
   // TODO: use keyvault for the admin credentials (shit, that requires a keyvault)
   // TODO: make sure to set patch mode to Manual because video games!
   // TODO: can entra auth be configured instead? Default password user is .\azureuser
-console.log(`[vm] server ${vm.fqdns} ${vm.publicIpAddress}`, vm);
+console.log(`[vm] server ${vm.fqdns} ${vm.publicIpAddress}`);
+
+rg<VirtualMachineExtension>`vm extension set --vm-name ${vmName} --name AADSSHLoginForLinux --publisher Microsoft.Azure.ActiveDirectory`;
+
+const me = await az`ad signed-in-user show`; // TODO: move into az.account or something and/or get types for it
+await az`role assignment create --assignee ${me.userPrincipalName} --role ${"Virtual Machine User Login"} --scope ${vm.id}`;
 
 // TODO: Add tags to this example
