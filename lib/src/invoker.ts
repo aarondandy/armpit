@@ -8,6 +8,7 @@ import type {
 
 type AzTemplateExpressionItem =
   | undefined // Many properties on ARM types are optional, which is annoying
+  | null
   | string
   | number
   | ExecaResult
@@ -71,11 +72,12 @@ export function execaAzCliInvokerFactory<TInvokerOptions extends InvokerOptions>
         templates = ensureAzPrefix(templates);
       }
 
-      // TODO: coerce nullish expressions into "" to simplify usage ... but maybe only if it has lax arg handling configured
+      // Expressions of nullish values are converted to Execa template expressions
+      const execaExpressions = expressions.map(e => e ?? "") as ExecaTemplateExpression[];
 
       let invocationResult;
       try {
-        invocationResult = await execaInvoker(templates, ...(expressions as ExecaTemplateExpression[]));
+        invocationResult = await execaInvoker(templates, ...execaExpressions);
       } catch (invocationError) {
         if (fnOptions.laxResultHandling) {
           const stderr = (<ExecaError>invocationError)?.stderr;
