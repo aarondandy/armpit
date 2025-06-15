@@ -17,7 +17,7 @@ import type {
   VirtualMachine,
   Disk,
   VirtualMachineExtension,
-  InstanceViewStatus,
+  RunCommandResult,
 } from "@azure/arm-compute";
 import { loadMyEnvironment, loadState, saveState } from "./utils/state.js";
 
@@ -145,12 +145,12 @@ const vmExtensions = (async () => {
 const vmAuth = (async () => {
   const { userPrincipalName } = await az<any>`ad signed-in-user show`; // TODO: move into az.account or something and/or get types for it
   await az`role assignment create --assignee ${userPrincipalName} --role ${"Virtual Machine Administrator Login"} --scope ${(await vm).id}`;
-  console.log(`[vm] user ${userPrincipalName} added to ${vmName}`);
+  console.log(`[vm] admin ${userPrincipalName} added to ${vmName}`);
 })();
 const vmConfig = (async () => {
   await vm; // TODO: it would be better if we had a vm.name
-  const result = await rg<InstanceViewStatus>`vm run-command invoke --command-id RunShellScript -n ${vmName} --scripts @samples\\factorio.init.sh`;
-  console.log(`[vm] init script executed: ${result.displayStatus}`);
+  const result = await rg<RunCommandResult>`vm run-command invoke --command-id RunShellScript -n ${vmName} --scripts @samples\\factorio.init.sh`;
+  console.log(`[vm] init script status: ${result.value?.map(s => s.displayStatus)}`);
 })();
 
 await Promise.all([
@@ -158,5 +158,11 @@ await Promise.all([
   vmAuth,
   vmConfig,
 ]);
+
+console.log(`
+The server is ready and the factory must grow.
+Connect: ${(await pip).dnsSettings?.fqdn} (${(await pip).ipAddress})
+Admin: az ssh vm -n ${vmName} -g ${rg.name}
+`);
 
 // TODO: Add tags to this example
