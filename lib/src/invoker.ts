@@ -34,13 +34,42 @@ function ensureAzPrefix(templates: TemplateStringsArray) {
   return templates;
 }
 
+function extractWrappedResponsePropertyName(response: any): string | null {
+  let propName: string | null = null;
+  for (const key in response) {
+    if (Object.hasOwn(response, key)) {
+      if (propName == null) {
+        propName = key;
+      } else {
+        // If there are multiple properties then it doesn't fit the shape of a wrapped response
+        return null;
+      }
+    }
+  }
+
+  if (propName) {
+    // Some create responses have {NewX:{}} or {newX:{}} wrappers
+    // around the actual response. This will detect if the
+    if (/^[Nn]ew[A-Za-z]+$/.test(propName)) {
+      return propName;
+    }
+
+    if (propName === "publicIp") {
+      return propName;
+    }
+  }
+
+  return null;
+}
+
 export interface CliInvokers {
   strict: <T>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]) => Promise<T>;
   lax: <T>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]) => Promise<T | null>;
 }
 
 interface CliInvokerFnFactoryOptions {
-  laxResultHandling?: boolean
+  laxResultHandling?: boolean,
+  unwrapNewResults?: boolean,
 }
 
 type InvokerFnFactory = <TOptions extends CliInvokerFnFactoryOptions>(options: TOptions) => <TResult>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]) => Promise<TOptions extends { laxParsing: true } ? (TResult | null) : TResult>;
@@ -98,17 +127,38 @@ export function execaAzCliInvokerFactory<TInvokerOptions extends InvokerOptions>
       if (stdout == null || stdout === "") {
         return null; // even for lax rules because what else should be done with a blank response from delete for example.
       } else if (typeof stdout === "string") {
-        return JSON.parse(stdout);
+        return parseJson(stdout);
       } else if (Array.isArray(stdout)) {
-        return JSON.parse((<string[]>stdout).join(""));
+        return parseJson((<string[]>stdout).join(""));
       } else {
         throw new Error("Failed to parse invocation result");
+      }
+
+      function parseJson(value: string) {
+        if (value == null || value === "") {
+          return null; // empty result
+        }
+
+        let result = JSON.parse(value);
+
+        if (fnOptions.unwrapNewResults) {
+          const wrappedPropName = extractWrappedResponsePropertyName(result);
+          if (wrappedPropName != null) {
+            result = result[wrappedPropName];
+          }
+        }
+
+        return result;
       }
     };
   };
 
+  const baseInvokerOptions = {
+    unwrapNewResults: true,
+  };
+
   return {
-    strict: invokerFnBuilder({ }),
-    lax: invokerFnBuilder({ laxResultHandling: true }),
+    strict: invokerFnBuilder({ ...baseInvokerOptions }),
+    lax: invokerFnBuilder({ ...baseInvokerOptions, laxResultHandling: true }),
   }
 }

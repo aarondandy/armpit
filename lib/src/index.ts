@@ -11,10 +11,6 @@ import {
   type TenantId,
   isTenantId,
   isNamedLocationDescriptor,
-  type VirtualNetworkCreateResult,
-  type PublicIPAddressCreateResult,
-  type NetworkInterfaceCreateResult,
-  type NetworkSecurityGroupCreateResult,
 } from "./azureTypes.js";
 import { NameHash } from "./nameHash.js";
 import { ExistingGroupLocationConflictError, GroupNotEmptyError } from "./errors.js";
@@ -23,10 +19,6 @@ import { CallableClassBase } from "./utils.js";
 
 export type {
   Account,
-  VirtualNetworkCreateResult,
-  PublicIPAddressCreateResult,
-  NetworkInterfaceCreateResult,
-  NetworkSecurityGroupCreateResult,
 };
 
 interface AzCliInvokable {

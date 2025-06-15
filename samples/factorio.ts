@@ -1,36 +1,28 @@
 import path from "node:path";
-import {
-  az,
-  NameHash,
-  type VirtualNetworkCreateResult,
-  type PublicIPAddressCreateResult,
-  type NetworkInterfaceCreateResult,
-  type NetworkSecurityGroupCreateResult,
-} from "armpit";
+import { az, NameHash } from "armpit";
+import { loadMyEnvironment, loadState, saveState } from "./utils/state.js";
 import type {
   Subnet,
   VirtualNetwork,
-  ApplicationSecurityGroup
+  ApplicationSecurityGroup,
+  NetworkSecurityGroup,
+  PublicIPAddress,
+  NetworkInterface,
 } from "@azure/arm-network";
 import type {
-  VirtualMachinesCreateOrUpdateResponse,
-  VirtualMachine,
-  Disk,
   VirtualMachineExtension,
   RunCommandResult,
 } from "@azure/arm-compute";
-import { loadMyEnvironment, loadState, saveState } from "./utils/state.js";
 
 // Environment & Subscription
 const targetEnvironment = await loadMyEnvironment("samples");
-const targetLocation = "westus2";
+const targetLocation = "westus2"; // TODO: it would be better to pull this off "MyEnvironment"
 await az.account.setOrLogin(targetEnvironment);
-const subHash = new NameHash(targetEnvironment.subscriptionId);
-const state = await loadState<{serverName: string | null | undefined}>();
+const state = await loadState<{serverName?: string}>();
 
 // Resource Group
 const rg = await az.group(`videogames-${targetLocation}`, targetLocation);
-const rgHash = subHash.concat(rg.name);
+const resourceHash = new NameHash(targetEnvironment.subscriptionId).concat(rg.name);
 
 // Network
 
@@ -40,10 +32,8 @@ const asgs = {
 }
 
 const nsg = (async () => {
-  const myIp = fetch("https://api.ipify.org/").then(r => r.text());
-  const nsg = await rg<NetworkSecurityGroupCreateResult>`network nsg create -n nsg-videogames-${rg.location}`
-    .then(r => r.NewNSG); // TODO: find a better way than "then"
-
+  const myIp = (await fetch("https://api.ipify.org/")).text();
+  const nsg = await rg<NetworkSecurityGroup>`network nsg create -n nsg-videogames-${rg.location}`;
   console.log(`[net] nsg ${nsg.name}`);
 
   // TODO find a way that doesn't temporarily block things on re-create
@@ -61,14 +51,8 @@ const nsg = (async () => {
   return nsg;
 })();
 
-let vnet = rg<VirtualNetworkCreateResult>`network vnet create
-  -n vnet-videogames-${rg.location}
-  --address-prefixes 10.64.0.0/16`
-  .then(r => r.newVNet) // TODO: find a better way than "then"
-  .then(vnet => {
-    console.log(`[net] vnet ${vnet.name} ${vnet.addressSpace?.addressPrefixes?.[0]}`);
-    return vnet;
-  });
+const vnet = rg<VirtualNetwork>`network vnet create -n vnet-videogames-${rg.location} --address-prefixes 10.64.0.0/16`;
+vnet.then(vnet => console.log(`[net] vnet ${vnet.name} ${vnet.addressSpace?.addressPrefixes?.[0]}`));
 
 async function buildSubnet(name: string, octet: number) {
   const { name: vnetName, addressSpace } = await vnet;
@@ -87,28 +71,19 @@ const subnets = {
 
 // Server
 if (!state.serverName) {
-  state.serverName = `factorio-${rgHash}`;
+  state.serverName = `factorio-${resourceHash}`;
   await saveState(state);
 }
 
-const pip = rg<PublicIPAddressCreateResult>`network public-ip create
+const pip = rg<PublicIPAddress>`network public-ip create
   -n pip-${state.serverName} --dns-name ${state.serverName}
-  --allocation-method static --sku standard`
-  .then(r => r.publicIp) // TODO: find a better way than "then"
-  .then(pip => {
-    console.log(`[vm] public ip ${pip.dnsSettings?.fqdn} (${pip.ipAddress})`);
-    return pip;
-  });
-const nic = (async () => {
-  const nic = await rg<NetworkInterfaceCreateResult>`network nic create
-    -n nic-${state.serverName}
-    --subnet ${(await subnets.vms).id} --public-ip-address ${(await pip).id}
-    --network-security-group ${(await nsg).id}
-    --asgs ${[(await asgs.ssh).name, (await asgs.factorio).name]}`
-    .then(r => r.NewNIC); // TODO: find a better way than "then"
-  console.log(`[vm] nic ${nic.ipConfigurations?.[0]?.privateIPAddress}`);
-  return nic;
-})();
+  --allocation-method static --sku standard`;
+pip.then(pip => console.log(`[vm] public ip ${pip.dnsSettings?.fqdn} (${pip.ipAddress})`));
+
+const nic = rg<NetworkInterface>`network nic create -n nic-${state.serverName}
+  --subnet ${(await subnets.vms).id} --public-ip-address ${(await pip).id}
+  --network-security-group ${(await nsg).id} --asgs ${[(await asgs.ssh).name, (await asgs.factorio).name]}`;
+nic.then(nic => console.log(`[vm] nic ${nic.ipConfigurations?.[0]?.privateIPAddress}`));
 
 // TODO: Where the hell is this stuff defined? I don't see anything matching the shape in arm-compute.
 type VirtualMachineCreateResult = {
@@ -123,7 +98,7 @@ type VirtualMachineCreateResult = {
   zones: string
 };
 
-const vmName = `vm-${state.serverName}`; // TODO: it would be better to get this from the vm variable
+const vmName = `vm-${state.serverName}`; // TODO: it would be better to get this from the vm variable after create
 const vm = (async () => {
   const vm = await rg<VirtualMachineCreateResult>`vm create
     -n ${vmName} --computer-name ${state.serverName}
@@ -149,7 +124,8 @@ const vmAuth = (async () => {
 })();
 const vmConfig = (async () => {
   await vm; // TODO: it would be better if we had a vm.name
-  const result = await rg<RunCommandResult>`vm run-command invoke --command-id RunShellScript -n ${vmName} --scripts @samples\\factorio.init.sh`;
+  const scriptPath = path.join(import.meta.dirname, "factorio.init.sh");
+  const result = await rg<RunCommandResult>`vm run-command invoke --command-id RunShellScript -n ${vmName} --scripts ${"@" + scriptPath}`;
   console.log(`[vm] init script status: ${result.value?.map(s => s.displayStatus)}`);
 })();
 
