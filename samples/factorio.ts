@@ -14,17 +14,25 @@ import type {
   RunCommandResult,
 } from "@azure/arm-compute";
 
+// --------------------------
 // Environment & Subscription
+// --------------------------
+
 const targetEnvironment = await loadMyEnvironment("samples");
-const targetLocation = "westus2"; // TODO: it would be better to pull this off "MyEnvironment"
+const targetLocation = targetEnvironment.defaultLocation ?? "centralus";
 await az.account.setOrLogin(targetEnvironment);
 const state = await loadState<{serverName?: string}>();
 
+// --------------
 // Resource Group
+// --------------
+
 const rg = await az.group(`videogames-${targetLocation}`, targetLocation);
 const resourceHash = new NameHash(targetEnvironment.subscriptionId).concat(rg.name);
 
+// -------
 // Network
+// -------
 
 const asgs = {
   ssh: rg<ApplicationSecurityGroup>`network asg create -n asg-ssh`,
@@ -54,22 +62,28 @@ const nsg = (async () => {
 const vnet = rg<VirtualNetwork>`network vnet create -n vnet-videogames-${rg.location} --address-prefixes 10.64.0.0/16`;
 vnet.then(vnet => console.log(`[net] vnet ${vnet.name} ${vnet.addressSpace?.addressPrefixes?.[0]}`));
 
-async function buildSubnet(name: string, octet: number) {
+const subnets = (async () => {
+  const { id: nsgId } = await nsg;
   const { name: vnetName, addressSpace } = await vnet;
-  const subnetPrefix = addressSpace!.addressPrefixes![0].replace(/\d+\.\d+\/\d+$/, `${octet}.0/24`);
-  const subnet = await rg<Subnet>`network vnet subnet create
-    -n ${name} --vnet-name ${vnetName}
-    --address-prefix ${subnetPrefix}
-    --network-security-group ${(await nsg).id}`;
-  console.log(`[net] subnet ${subnet.name} ${subnet.addressPrefix}`);
-  return subnet;
-}
-const subnets = {
-  default: buildSubnet("default", 0),
-  vms: buildSubnet("vms", 8),
-};
+  async function buildSubnet(name: string, octet: number) {
+    const subnetPrefix = addressSpace!.addressPrefixes![0].replace(/\d+\.\d+\/\d+$/, `${octet}.0/24`);
+    const subnet = await rg<Subnet>`network vnet subnet create
+      -n ${name} --vnet-name ${vnetName}
+      --address-prefix ${subnetPrefix}
+      --network-security-group ${nsgId}`;
+      console.log(`[net] subnet ${subnet.name} ${subnet.addressPrefix}`);
+    return subnet;
+  };
+  return {
+    default: await buildSubnet("default", 0),
+    vms: await buildSubnet("vms", 8),
+  };
+})();
 
-// Server
+// -------------------
+// Server and Services
+// -------------------
+
 if (!state.serverName) {
   state.serverName = `factorio-${resourceHash}`;
   await saveState(state);
@@ -81,8 +95,8 @@ const pip = rg<PublicIPAddress>`network public-ip create
 pip.then(pip => console.log(`[vm] public ip ${pip.dnsSettings?.fqdn} (${pip.ipAddress})`));
 
 const nic = rg<NetworkInterface>`network nic create -n nic-${state.serverName}
-  --subnet ${(await subnets.vms).id} --public-ip-address ${(await pip).id}
-  --network-security-group ${(await nsg).id} --asgs ${[(await asgs.ssh).name, (await asgs.factorio).name]}`;
+  --subnet ${(await subnets).vms.id} --public-ip-address ${(await pip).id}
+  --network-security-group ${(await nsg).id} --asgs ${(await Promise.all([asgs.ssh, asgs.factorio])).map(asg => asg.name)}`;
 nic.then(nic => console.log(`[vm] nic ${nic.ipConfigurations?.[0]?.privateIPAddress}`));
 
 // TODO: Where the hell is this stuff defined? I don't see anything matching the shape in arm-compute.

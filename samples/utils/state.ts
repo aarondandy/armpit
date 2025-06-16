@@ -10,6 +10,7 @@ interface MyEnv {
   code: string,
   subscriptionId: string,
   tenantId: string,
+  defaultLocation?: string,
 }
 
 interface MyConfig {

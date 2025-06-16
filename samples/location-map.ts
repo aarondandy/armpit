@@ -6,12 +6,12 @@ if (!currentAccount) throw new Error("Account required");
 const locations = await az.account.listLocations();
 const mapPins = locations
   .filter(loc => loc.metadata && loc.metadata.latitude && loc.metadata.longitude) // not all locations have coordinates
-  .map(loc => ({ name: loc.displayName, lat: parseFloat(loc.metadata!.latitude!), lon: parseFloat(loc.metadata!.longitude!) })) // convert from string values
+  .map(loc => ({ displayName: loc.displayName, name: loc.name, lat: parseFloat(loc.metadata!.latitude!), lon: parseFloat(loc.metadata!.longitude!) })) // convert from string values
   .filter(loc => loc.lat || loc.lon); // exclude null or 0,0 locations
 
 console.log(`${mapPins.length} locations:`);
 for (let pin of mapPins) {
-  console.log(` * ${pin.name} (${pin.lat}, ${pin.lon})`);
+  console.log(` * ${pin.displayName} (${pin.name}) (${pin.lat}, ${pin.lon})`);
 }
 
 console.log("");

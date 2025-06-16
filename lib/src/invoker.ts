@@ -6,14 +6,21 @@ import type {
   TemplateExpression as ExecaTemplateExpression
 } from "execa";
 
+interface Stringable { toString(): string };
+
 type AzTemplateExpressionItem =
   | undefined // Many properties on ARM types are optional, which is annoying
   | null
   | string
   | number
   | ExecaResult
-  | ExecaSyncResult;
-export type AzTemplateExpression = AzTemplateExpressionItem | readonly AzTemplateExpressionItem[]
+  | ExecaSyncResult
+  | Stringable;
+export type AzTemplateExpression = AzTemplateExpressionItem | readonly AzTemplateExpressionItem[];
+
+function isExecaResult(value: any): value is (ExecaResult | ExecaSyncResult) {
+  return !!(value && (value.command || value.stdout || value.stderr));
+}
 
 interface InvokerOptions {
   env?: NodeJS.ProcessEnv,
@@ -101,8 +108,35 @@ export function execaAzCliInvokerFactory<TInvokerOptions extends InvokerOptions>
         templates = ensureAzPrefix(templates);
       }
 
-      // Expressions of nullish values are converted to Execa template expressions
-      const execaExpressions = expressions.map(e => e ?? "") as ExecaTemplateExpression[];
+      // Expressions of nullish values are converted to Execa template expressions.
+      // Expressions with toString are converted to strings when needed.
+      function cleanExpression(e: AzTemplateExpression): ExecaTemplateExpression {
+        if (e == null) {
+          return "";
+        }
+
+        switch (typeof e) {
+          case "number":
+          case "string":
+            return e;
+          case "object":
+          default:
+            if (Array.isArray(e)) {
+              return e.map(cleanExpression) as ExecaTemplateExpression;
+            }
+
+            if (isExecaResult(e)) {
+              return e;
+            }
+
+            if (typeof e.toString === "function") {
+              return e.toString();
+            }
+
+            return e as ExecaTemplateExpression;
+        }
+      };
+      const execaExpressions = expressions.map(cleanExpression);
 
       let invocationResult;
       try {
