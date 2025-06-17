@@ -44,7 +44,8 @@ const nsg = (async () => {
   const nsg = await rg<NetworkSecurityGroup>`network nsg create -n nsg-videogames-${rg.location}`;
   console.log(`[net] nsg ${nsg.name}`);
 
-  // TODO find a way that doesn't temporarily block things on re-create
+  // TODO: Find a way that doesn't temporarily block things on re-create. Create clears rules.
+  // TODO: Also, some solution that allows upserting behavior would be very nice.
 
   await rg`network nsg rule create
     -n FactoryMustGrow --nsg-name ${nsg.name} --priority 200
@@ -62,6 +63,7 @@ const nsg = (async () => {
 const vnet = rg<VirtualNetwork>`network vnet create -n vnet-videogames-${rg.location} --address-prefixes 10.64.0.0/16`;
 vnet.then(vnet => console.log(`[net] vnet ${vnet.name} ${vnet.addressSpace?.addressPrefixes?.[0]}`));
 
+// TODO: subnets may be better as a sequential loop
 const subnets = (async () => {
   const { id: nsgId } = await nsg;
   const { name: vnetName, addressSpace } = await vnet;
@@ -114,6 +116,7 @@ type VirtualMachineCreateResult = {
 
 const vmName = `vm-${state.serverName}`; // TODO: it would be better to get this from the vm variable after create
 const vm = (async () => {
+  // TODO: maybe the script should directly control the disk, so the VM can be recreated safely without data loss
   const vm = await rg<VirtualMachineCreateResult>`vm create
     -n ${vmName} --computer-name ${state.serverName}
     --size Standard_D2als_v6
