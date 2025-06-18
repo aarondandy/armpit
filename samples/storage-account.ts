@@ -12,7 +12,7 @@ const resourceHash = new NameHash(targetEnvironment.subscriptionId, { defaultLen
 // Ensure the storage account is setup
 const sku: SkuName = "Standard_LRS";
 const sa = await rg<StorageAccount>`storage account create
-  -n samples${resourceHash} --sku ${sku} --kind StorageV2
+  -n sample${resourceHash} --sku ${sku} --kind StorageV2
   --allow-blob-public-access true --https-only true`;
 console.log(`storage ready ${sa.name}`);
 
