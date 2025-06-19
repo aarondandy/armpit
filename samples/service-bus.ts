@@ -2,7 +2,6 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { az, NameHash } from "armpit";
 import { loadMyEnvironment } from "./utils/state.js";
 import type { SBNamespace, SBQueue } from "@azure/arm-servicebus";
-import { AzureCliCredential } from "@azure/identity";
 import { ServiceBusClient } from "@azure/service-bus";
 
 const targetEnvironment = await loadMyEnvironment("samples");
@@ -27,8 +26,7 @@ await Promise.all(["Azure Service Bus Data Receiver", "Azure Service Bus Data Se
 const connectionString = `Endpoint=sb://${new URL(namespace.serviceBusEndpoint!).host};`;
 console.log(connectionString);
 
-const credential = new AzureCliCredential({ tenantId: targetEnvironment.tenantId });
-const client = new ServiceBusClient(new URL(namespace.serviceBusEndpoint!).host, credential);
+const client = new ServiceBusClient(new URL(namespace.serviceBusEndpoint!).host, rg.getCredential());
 try {
   const senderPromise = (async () => {
     const sender = client.createSender(queue.name!);

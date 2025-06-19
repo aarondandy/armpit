@@ -13,6 +13,7 @@ import { CallableClassBase } from "./tsUtils.js";
 import { execaAzCliInvokerFactory, type AzCliInvokable, type AzCliInvokers } from "./azCliUtils.js";
 import { AzAccountTools } from "./azAccountTools.js";
 import { AzNsgTools } from "./azNsgTools.js";
+import { ArmpitCredential, ArmpitCredentialOptions } from "./armpitCredential.js";
 
 export type {
   Account,
@@ -22,6 +23,7 @@ export type {
 interface AzGlobal {
   readonly group: AzGroupTools;
   readonly account: AzAccountTools;
+  getCredential(options?: ArmpitCredentialOptions): ArmpitCredential;
 }
 
 interface AzLocationBound {
@@ -32,6 +34,7 @@ interface AzGroupBound extends AzLocationBound {
   readonly name: string;
   readonly subscriptionId?: string;
   readonly nsg: AzNsgTools;
+  getCredential(options?: ArmpitCredentialOptions): ArmpitCredential;
 }
 
 interface AzGroupTools {
@@ -105,10 +108,11 @@ class AzGroupTools extends CallableClassBase implements AzGroupTools {
     });
 
     const { name: groupName, ...descriptorWithoutName } = descriptor;
+    const subscriptionId = extractSubscriptionId(group.id);
     let context = {
       groupName,
       location: descriptor.location,
-      subscriptionId: extractSubscriptionId(group.id),
+      subscriptionId,
     };
 
     const mainFn = invoker.strict;
@@ -123,6 +127,7 @@ class AzGroupTools extends CallableClassBase implements AzGroupTools {
       strict: invoker.strict,
       lax: invoker.lax,
       nsg: new AzNsgTools(invoker, context),
+      getCredential: (options?: ArmpitCredentialOptions) => new ArmpitCredential(invoker, { subscription: subscriptionId ?? undefined, ...options }),
     });
   }
 
@@ -182,7 +187,8 @@ const az = (function(): AzGlobal & AzCliInvokable {
   });
   let result = Object.assign(cliResult, {
     strict: invoker.strict,
-    lax: invoker.lax
+    lax: invoker.lax,
+    getCredential: (options?: ArmpitCredentialOptions) => new ArmpitCredential(invoker, options),
   });
   return result;
 })();

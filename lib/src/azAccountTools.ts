@@ -10,6 +10,7 @@ import {
   type TenantId,
   isTenantId,
 } from "./azUtils.js";
+import { ArmpitCredential, ArmpitCredentialOptions } from "./armpitCredential.js";
 
 export class AzAccountTools {
 
@@ -186,5 +187,9 @@ export class AzAccountTools {
     }
 
     return results ?? [];
+  }
+
+  getCredential(options?: ArmpitCredentialOptions): ArmpitCredential {
+    return new ArmpitCredential(this.#invokers, options);
   }
 }
