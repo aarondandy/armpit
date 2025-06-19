@@ -16,6 +16,8 @@ import { NameHash } from "./nameHash.js";
 import { ExistingGroupLocationConflictError, GroupNotEmptyError } from "./errors.js";
 import { execaAzCliInvokerFactory, type CliInvokers, type AzTemplateExpression } from "./invoker.js";
 import { CallableClassBase } from "./utils.js";
+import { extractSubscriptionId } from "./sdkTools.js";
+import { AzNsgTools } from "./azNsgTools.js";
 
 export type {
   Account,
@@ -39,6 +41,8 @@ interface AzLocationBound {
 
 interface AzGroupBound extends AzLocationBound {
   readonly name: string;
+  readonly subscriptionId?: string;
+  readonly nsg: AzNsgTools;
 }
 
 interface AzGroupTools {
@@ -47,6 +51,7 @@ interface AzGroupTools {
 }
 
 class AzGroupTools extends CallableClassBase implements AzGroupTools {
+
   #invokers: CliInvokers;
   #context: { location?: string };
 
@@ -99,11 +104,39 @@ class AzGroupTools extends CallableClassBase implements AzGroupTools {
       throw new ExistingGroupLocationConflictError(group, descriptor.location);
     }
 
+    const subscriptionId = extractSubscriptionId(group.id);
+
     if (!isNamedLocationDescriptor(group)) {
       throw new Error("Resource group is not correctly formed");
     }
 
-    return this.#cli(group);
+    const invoker = execaAzCliInvokerFactory({
+      forceAzCommandPrefix: true,
+      laxParsing: false,
+      defaultLocation: descriptor.location,
+      defaultResourceGroup: descriptor.name,
+    });
+
+    const { name: groupName, ...descriptorWithoutName } = descriptor;
+    let context = {
+      groupName,
+      location: descriptor.location,
+      subscriptionId,
+    };
+
+    const mainFn = invoker.strict;
+    const cliResult = Object.assign(mainFn, descriptorWithoutName);
+    Object.defineProperty(cliResult, "name", {
+      value: groupName,
+      configurable: true,
+      enumerable: true,
+      writable: false,
+    });
+    return Object.assign(cliResult, {
+      strict: invoker.strict,
+      lax: invoker.lax,
+      nsg: new AzNsgTools(invoker, context),
+    });
   }
 
   async show(name: string): Promise<ResourceGroup | null> {
@@ -140,30 +173,6 @@ class AzGroupTools extends CallableClassBase implements AzGroupTools {
     return true;
   }
 
-  #cli(descriptor: { readonly name: string, readonly location: string}): AzGroupBound & AzCliInvokable {
-    const invoker = execaAzCliInvokerFactory({
-      forceAzCommandPrefix: true,
-      laxParsing: false,
-      defaultLocation: descriptor.location,
-      defaultResourceGroup: descriptor.name,
-    });
-
-    const { name: groupName, ...descriptorWithoutName } = descriptor;
-
-    const mainFn = invoker.strict;
-    const cliResult = Object.assign(mainFn, descriptorWithoutName);
-    Object.defineProperty(cliResult, "name", {
-      value: groupName,
-      configurable: true,
-      enumerable: true,
-      writable: false,
-    });
-    return Object.assign(cliResult, {
-      strict: invoker.strict,
-      lax: invoker.lax
-    });
-  }
-
   #getRequiredDefaultLocation(): string {
     const location = this.#context.location;
     if (location == null) {
@@ -175,6 +184,7 @@ class AzGroupTools extends CallableClassBase implements AzGroupTools {
 }
 
 class AzAccountTools {
+
   #invokers: CliInvokers;
 
   constructor(invokers: CliInvokers) {

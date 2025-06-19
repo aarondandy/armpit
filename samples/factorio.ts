@@ -5,7 +5,6 @@ import type {
   Subnet,
   VirtualNetwork,
   ApplicationSecurityGroup,
-  NetworkSecurityGroup,
   PublicIPAddress,
   NetworkInterface,
 } from "@azure/arm-network";
@@ -23,6 +22,8 @@ const targetLocation = targetEnvironment.defaultLocation ?? "centralus";
 await az.account.setOrLogin(targetEnvironment);
 const state = await loadState<{serverName?: string}>();
 
+const myIp = fetch("https://api.ipify.org/").then(r => r.text());
+
 // --------------
 // Resource Group
 // --------------
@@ -39,48 +40,44 @@ const asgs = {
   factorio: rg<ApplicationSecurityGroup>`network asg create -n asg-factorio`
 }
 
-const nsg = (async () => {
-  const myIp = (await fetch("https://api.ipify.org/")).text();
-  const nsg = await rg<NetworkSecurityGroup>`network nsg create -n nsg-videogames-${rg.location}`;
-  console.log(`[net] nsg ${nsg.name}`);
-
-  // TODO: Find a way that doesn't temporarily block things on re-create. Create clears rules.
-  // TODO: Also, some solution that allows upserting behavior would be very nice.
-
-  await rg`network nsg rule create
-    -n FactoryMustGrow --nsg-name ${nsg.name} --priority 200
-    --direction Inbound --access Allow
-    --destination-asgs ${(await asgs.factorio).name} --destination-port-ranges 34197 --protocol Udp`
-
-  await rg`network nsg rule create
-    -n ManageFromWorkstation --nsg-name ${nsg.name} --priority 1000
-    --direction Inbound --access Allow
-    --source-address-prefixes ${await myIp}
-    --destination-asgs ${(await asgs.ssh).name} --destination-port-ranges 22 --protocol Tcp`;
-  return nsg;
-})();
+const nsg = (async () => await rg.nsg(`nsg-videogames-${rg.location}`, {
+  rules: [
+    {
+      name: "FactoryMustGrow",
+      direction: "Inbound", priority: 200,
+      access: "Allow", protocol: "Udp",
+      destinationApplicationSecurityGroups: [await asgs.factorio],
+      destinationPortRange: "34197",
+    },
+    {
+      name: "ManageFromWorkstation",
+      direction: "Inbound", priority: 1000,
+      access: "Allow", protocol: "Tcp",
+      sourceAddressPrefix: await myIp,
+      destinationApplicationSecurityGroups: [await asgs.ssh],
+      destinationPortRange: "22",
+    }
+  ]
+}))();
+nsg.then(nsg => console.log(`[net] nsg ${nsg.name}`));
 
 const vnet = rg<VirtualNetwork>`network vnet create -n vnet-videogames-${rg.location} --address-prefixes 10.64.0.0/16`;
 vnet.then(vnet => console.log(`[net] vnet ${vnet.name} ${vnet.addressSpace?.addressPrefixes?.[0]}`));
 
-// TODO: subnets may be better as a sequential loop
 const subnets = (async () => {
   const { id: nsgId } = await nsg;
   const { name: vnetName, addressSpace } = await vnet;
-  async function buildSubnet(name: string, octet: number) {
-    const subnetPrefix = addressSpace!.addressPrefixes![0].replace(/\d+\.\d+\/\d+$/, `${octet}.0/24`);
-    const subnet = await rg<Subnet>`network vnet subnet create
-      -n ${name} --vnet-name ${vnetName}
-      --address-prefix ${subnetPrefix}
-      --network-security-group ${nsgId}`;
-      console.log(`[net] subnet ${subnet.name} ${subnet.addressPrefix}`);
-    return subnet;
-  };
+  const getPrefix = (octet: number) => addressSpace!.addressPrefixes![0].replace(/\d+\.\d+\/\d+$/, `${octet}.0/24`);
+  const buildSubnet = (name: string, octet: number) => rg<Subnet>`network vnet subnet create
+    -n ${name} --address-prefix ${getPrefix(octet)}
+    --vnet-name ${vnetName} --network-security-group ${nsgId}`;
+  // Subnets must be defined in sequence, not in parallel
   return {
     default: await buildSubnet("default", 0),
     vms: await buildSubnet("vms", 8),
   };
 })();
+subnets.then(subnets => console.log(`[net] subnets ${Object.keys(subnets).join(", ")}`));
 
 // -------------------
 // Server and Services
@@ -157,5 +154,3 @@ The server is ready and the factory must grow.
 Connect: ${(await pip).dnsSettings?.fqdn} (${(await pip).ipAddress})
 Admin: az ssh vm -n ${vmName} -g ${rg.name}
 `);
-
-// TODO: Add tags to this example
