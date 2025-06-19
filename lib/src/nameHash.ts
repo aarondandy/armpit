@@ -1,5 +1,5 @@
 import { createHash, createHmac } from "node:crypto";
-import { CallableClassBase } from "./utils.js";
+import { CallableClassBase } from "./tsUtils.js";
 
 export interface NameHash {
   (length?: number): string;

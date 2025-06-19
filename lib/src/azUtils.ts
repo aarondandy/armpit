@@ -30,8 +30,10 @@ export function isTenantId(value: unknown): value is TenantId {
   return uuidValidate(value);
 }
 
-export function isNamedLocationDescriptor(resource?: any): resource is { name: string, location: string } {
-  return resource != null && typeof resource.name === "string" && typeof resource.location === "string";
+export function isNamedLocationDescriptor<T extends any>(resource?: T): resource is T & { name: string, location: string } {
+  return resource != null
+    && typeof (resource as any).name === "string"
+    && typeof (resource as any).location === "string";
 }
 
 // type VirtualMachineCreateResult = {
@@ -45,3 +47,26 @@ export function isNamedLocationDescriptor(resource?: any): resource is { name: s
 //   resourceGroup: string,
 //   zones: string
 // };
+
+export function extractSubscriptionId(resourceId?: string) {
+  if (!resourceId) {
+    return null;
+  }
+
+  const match = resourceId.match(/\/subscriptions\/([^/]+)\//i);
+  return (match && match[1]) ?? null;
+}
+
+export type Scope = string;
+export function isScope(value: unknown): value is Scope {
+  return typeof value === "string" && /^[0-9a-zA-Z-_.:/]+$/.test(value);
+}
+
+export interface AzCliAccessToken {
+  accessToken: string,
+  expiresOn: string,
+  expires_on: number,
+  subscription: SubscriptionIdOrName,
+  tenant: TenantId,
+  tokenType: string,
+}

@@ -69,7 +69,7 @@ function extractWrappedResponsePropertyName(response: any): string | null {
   return null;
 }
 
-export interface CliInvokers {
+export interface AzCliInvokers {
   strict: <T>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]) => Promise<T>;
   lax: <T>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]) => Promise<T | null>;
 }
@@ -81,7 +81,7 @@ interface CliInvokerFnFactoryOptions {
 
 type InvokerFnFactory = <TOptions extends CliInvokerFnFactoryOptions>(options: TOptions) => <TResult>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]) => Promise<TOptions extends { laxParsing: true } ? (TResult | null) : TResult>;
 
-export function execaAzCliInvokerFactory<TInvokerOptions extends InvokerOptions>(options: TInvokerOptions): CliInvokers {
+export function execaAzCliInvokerFactory<TInvokerOptions extends InvokerOptions>(options: TInvokerOptions): AzCliInvokers {
   const env: NodeJS.ProcessEnv = {
     ...options.env,
     AZURE_CORE_OUTPUT: "json", // request json by default
@@ -195,4 +195,11 @@ export function execaAzCliInvokerFactory<TInvokerOptions extends InvokerOptions>
     strict: invokerFnBuilder({ ...baseInvokerOptions }),
     lax: invokerFnBuilder({ ...baseInvokerOptions, laxResultHandling: true }),
   }
+}
+
+export interface AzCliInvokable {
+  <T>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]): Promise<T>;
+  strict: <T>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]) => Promise<T>;
+  lax: <T>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]) => Promise<T | null>;
+  // TODO: Expose env vars so somebody can use Execa or zx directly.
 }

@@ -1,34 +1,23 @@
-import type { ExecaError, /*ExecaScriptMethod*/ } from "execa";
-import type { Location } from "@azure/arm-resources-subscriptions";
 import type { ResourceGroup } from "@azure/arm-resources";
 import {
   type Account,
   type ResourceSummary,
-  type SubscriptionId,
   isSubscriptionId,
-  type SubscriptionIdOrName,
-  isSubscriptionIdOrName,
-  type TenantId,
   isTenantId,
   isNamedLocationDescriptor,
-} from "./azureTypes.js";
+  extractSubscriptionId,
+} from "./azUtils.js";
 import { NameHash } from "./nameHash.js";
 import { ExistingGroupLocationConflictError, GroupNotEmptyError } from "./errors.js";
-import { execaAzCliInvokerFactory, type CliInvokers, type AzTemplateExpression } from "./invoker.js";
-import { CallableClassBase } from "./utils.js";
-import { extractSubscriptionId } from "./sdkTools.js";
+import { CallableClassBase } from "./tsUtils.js";
+import { execaAzCliInvokerFactory, type AzCliInvokable, type AzCliInvokers } from "./azCliUtils.js";
+import { AzAccountTools } from "./azAccountTools.js";
 import { AzNsgTools } from "./azNsgTools.js";
 
 export type {
   Account,
+  ResourceSummary,
 };
-
-interface AzCliInvokable {
-  <T>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]): Promise<T>;
-  strict: <T>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]) => Promise<T>;
-  lax: <T>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]) => Promise<T | null>;
-  // TODO: Expose env vars so somebody can use Execa or zx directly.
-}
 
 interface AzGlobal {
   readonly group: AzGroupTools;
@@ -52,10 +41,10 @@ interface AzGroupTools {
 
 class AzGroupTools extends CallableClassBase implements AzGroupTools {
 
-  #invokers: CliInvokers;
+  #invokers: AzCliInvokers;
   #context: { location?: string };
 
-  constructor(invokers: CliInvokers, context: { location?: string }) {
+  constructor(invokers: AzCliInvokers, context: { location?: string }) {
     super();
     this.#invokers = invokers;
     this.#context = context;
@@ -104,8 +93,6 @@ class AzGroupTools extends CallableClassBase implements AzGroupTools {
       throw new ExistingGroupLocationConflictError(group, descriptor.location);
     }
 
-    const subscriptionId = extractSubscriptionId(group.id);
-
     if (!isNamedLocationDescriptor(group)) {
       throw new Error("Resource group is not correctly formed");
     }
@@ -113,15 +100,15 @@ class AzGroupTools extends CallableClassBase implements AzGroupTools {
     const invoker = execaAzCliInvokerFactory({
       forceAzCommandPrefix: true,
       laxParsing: false,
-      defaultLocation: descriptor.location,
-      defaultResourceGroup: descriptor.name,
+      defaultLocation: group.location ?? descriptor.location,
+      defaultResourceGroup: group.name ?? descriptor.name,
     });
 
     const { name: groupName, ...descriptorWithoutName } = descriptor;
     let context = {
       groupName,
       location: descriptor.location,
-      subscriptionId,
+      subscriptionId: extractSubscriptionId(group.id),
     };
 
     const mainFn = invoker.strict;
@@ -180,184 +167,6 @@ class AzGroupTools extends CallableClassBase implements AzGroupTools {
     }
 
     return location;
-  }
-}
-
-class AzAccountTools {
-
-  #invokers: CliInvokers;
-
-  constructor(invokers: CliInvokers) {
-    this.#invokers = invokers;
-  }
-
-  async show() {
-    try {
-      return await this.#invokers.lax<Account>`account show`;
-    } catch (invocationError) {
-      const stderr = (<ExecaError>invocationError)?.stderr;
-      if (stderr && typeof stderr === "string" && (/az login|az account set/i).test(stderr)) {
-        return null;
-      }
-
-      throw invocationError;
-    }
-  }
-
-  async list(opt?: {all?: boolean, refresh?: boolean}) : Promise<Account[]> {
-    let flags: string[] | undefined;
-    if (opt) {
-      flags = [];
-      if (opt.all) {
-        flags.push("--all");
-      }
-      if (opt.refresh) {
-        flags.push("--refresh");
-      }
-    }
-
-    let results: Account[] | null;
-    if (flags && flags.length > 0) {
-      results = await this.#invokers.lax<Account[]>`account list ${flags}`;
-    } else {
-      results = await this.#invokers.lax<Account[]>`account list`;
-    }
-
-    return results ?? [];
-  }
-
-  async set(subscriptionIdOrName: SubscriptionIdOrName) {
-    await this.#invokers.lax<Account>`account set -s ${subscriptionIdOrName}`;
-  }
-
-  async setOrLogin(subscriptionIdOrName: SubscriptionIdOrName, tenantId?: TenantId): Promise<Account | null>;
-  async setOrLogin(criteria: {subscriptionId: SubscriptionId, tenantId?: TenantId}): Promise<Account | null>;
-  async setOrLogin(criteria: any, secondArg?: any): Promise<Account | null> {
-    let subscription: SubscriptionId | SubscriptionIdOrName;
-    let tenantId: string | undefined;
-    let filterAccountsToSubscription: (candidates: Account[]) => Account[];
-
-    if (isSubscriptionIdOrName(criteria)) {
-      // overload: subscription, tenantId?
-      subscription = criteria;
-      if (secondArg != null) {
-        if (isTenantId(secondArg)) {
-          tenantId = secondArg;
-        } else {
-          throw new Error("Given tenant ID is not valid");
-        }
-      }
-
-      filterAccountsToSubscription = (accounts) => {
-        let results = accounts.filter(a => a.id === subscription);
-        if (results.length === 0) {
-          results = accounts.filter(a => a.name === subscription);
-        }
-
-        return results;
-      }
-    } else if ("subscriptionId" in criteria) {
-      // overload: {subscriptionId, tenantId?}
-      if (isSubscriptionId(criteria.subscriptionId)) {
-        subscription = criteria.subscriptionId;
-      } else {
-        throw new Error("Subscription ID is not valid");
-      }
-
-      if ("tenantId" in criteria) {
-        if (isTenantId(criteria.tenantId)) {
-          tenantId = criteria.tenantId;
-        } else {
-          throw new Error("Given tenant ID is not valid");
-        }
-      }
-
-      filterAccountsToSubscription = (accounts) => accounts.filter(a => a.id === subscription);
-    } else {
-      throw new Error("Arguments not supported");
-    }
-
-    const findAccount = (candidates: (Account | null)[]) => {
-      let matches = filterAccountsToSubscription(candidates.filter(a => a != null));
-      if (matches.length > 1 && tenantId) {
-        matches = matches.filter(a => a.tenantId == tenantId);
-      }
-
-      if (matches.length === 0) {
-        return null;
-      }
-
-      if (matches.length > 1) {
-        throw new Error(`Multiple account matches found: ${matches.map(a => a.id)}`);
-      }
-
-      const match = matches[0];
-      if (tenantId && match.tenantId != tenantId) {
-        throw new Error(`Account ${match.id} does not match expected tenant ${tenantId}`);
-      }
-
-      return match;
-    }
-
-    let account = findAccount([await this.show()]);
-    if (account) {
-      return account;
-    }
-
-    // TODO: Consider refreshing and allowing a search of non-enabled accounts.
-    //       That could come at a cost to performance though.
-    let knownAccounts = await this.list();
-    account = findAccount(knownAccounts);
-    if (account) {
-      await this.set(subscription);
-      return account;
-    }
-
-    console.debug("No current accounts match. Starting interactive login.");
-
-    knownAccounts = await this.login(tenantId) ?? [];
-    account = findAccount(knownAccounts);
-
-    if (!(account?.isDefault)) {
-      await this.set(subscription);
-      account = await this.show();
-    }
-
-    return account;
-  }
-
-  async login(tenantId?: string) : Promise<Account[] | null> {
-    try {
-      let loginAccounts : Account[] | null;
-      if (tenantId) {
-        loginAccounts = await this.#invokers.strict<Account[]>`login --tenant ${tenantId}`;
-      } else {
-        loginAccounts = await this.#invokers.strict<Account[]>`login`;
-      }
-
-      return loginAccounts;
-
-    } catch (invocationError) {
-      const stderr = (<ExecaError>invocationError)?.stderr;
-      if (stderr && typeof stderr === "string" && (/User cancelled/i).test(stderr)) {
-        return null;
-      }
-
-      throw invocationError;
-    }
-  }
-
-  async listLocations(names?: string[]) {
-    let results : Location[];
-    if (names != null && names.length > 0) {
-      const queryFilter = `[? contains([${names.map((n) => `'${n}'`).join(",")}],name)]`;
-      results = await this.#invokers.strict<Location[]>`account list-locations --query ${queryFilter}`;
-    }
-    else {
-      results = await this.#invokers.strict<Location[]>`account list-locations`;
-    }
-
-    return results ?? [];
   }
 }
 

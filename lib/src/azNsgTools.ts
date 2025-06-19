@@ -1,9 +1,10 @@
-import { CallableClassBase } from "./utils.js";
-import { handleGet } from "./sdkTools.js";
-import type { CliInvokers } from "./invoker.js";
 import type { NetworkSecurityGroup, SecurityRule } from "@azure/arm-network";
-import { AzureCliCredential } from "@azure/identity";
+//import { AzureCliCredential } from "@azure/identity";
 import { NetworkManagementClient } from "@azure/arm-network";
+import { CallableClassBase } from "./tsUtils.js";
+import { handleGet } from "./azSdkUtils.js";
+import type { AzCliInvokers } from "./azCliUtils.js";
+import { ArmpitCredential } from "./armpitCredential.js";
 
 interface AzNsgToolsContext {
   groupName?: string,
@@ -53,10 +54,10 @@ function ensureRuleOptionsSet(rule: SecurityRule) {
 
 export class AzNsgTools extends CallableClassBase implements AzNsgTools {
 
-  #invokers: CliInvokers;
+  #invokers: AzCliInvokers;
   #context: AzNsgToolsContext;
 
-  constructor(invokers: CliInvokers, context: AzNsgToolsContext) {
+  constructor(invokers: AzCliInvokers, context: AzNsgToolsContext) {
     super();
     this.#invokers = invokers;
     this.#context = context;
@@ -64,9 +65,10 @@ export class AzNsgTools extends CallableClassBase implements AzNsgTools {
 
   protected async fnImpl(name: string, options?: AzNsgUpsertOptions) {
     const subscriptionId = this.#context.subscriptionId ?? undefined;
-    const credential = new AzureCliCredential({
-      subscription: subscriptionId,
-    });
+    // const credential = new AzureCliCredential({
+    //   subscription: subscriptionId,
+    // });
+    const credential = new ArmpitCredential(this.#invokers, { subscription: subscriptionId });
     const client = subscriptionId
       ? new NetworkManagementClient(credential, subscriptionId)
       : new NetworkManagementClient(credential);
