@@ -76,3 +76,7 @@ export class ArmpitCredential implements TokenCredential {
     };
   }
 }
+
+export interface ArmpitCredentialProvider {
+  getCredential(options?: ArmpitCredentialOptions): ArmpitCredential;
+}

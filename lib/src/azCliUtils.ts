@@ -196,10 +196,3 @@ export function execaAzCliInvokerFactory<TInvokerOptions extends InvokerOptions>
     lax: invokerFnBuilder({ ...baseInvokerOptions, laxResultHandling: true }),
   }
 }
-
-export interface AzCliInvokable {
-  <T>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]): Promise<T>;
-  strict: <T>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]) => Promise<T>;
-  lax: <T>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]) => Promise<T | null>;
-  // TODO: Expose env vars so somebody can use Execa or zx directly.
-}

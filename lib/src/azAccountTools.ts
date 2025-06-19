@@ -10,9 +10,9 @@ import {
   type TenantId,
   isTenantId,
 } from "./azUtils.js";
-import { ArmpitCredential, ArmpitCredentialOptions } from "./armpitCredential.js";
+import { ArmpitCredential, ArmpitCredentialOptions, ArmpitCredentialProvider } from "./armpitCredential.js";
 
-export class AzAccountTools {
+export class AzAccountTools implements ArmpitCredentialProvider {
 
   #invokers: AzCliInvokers;
 
