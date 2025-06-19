@@ -29,6 +29,28 @@ export interface AzNsgTools {
   (name: string, options?: AzNsgUpsertOptions): Promise<NetworkSecurityGroup>;
 }
 
+function ensureRuleOptionsSet(rule: SecurityRule) {
+  if (!rule.protocol) {
+    rule.protocol = "*";
+  }
+
+  if (!rule.sourceAddressPrefix && !rule.sourceAddressPrefixes && !rule.sourceApplicationSecurityGroups) {
+    rule.sourceAddressPrefix = "*";
+  }
+
+  if (!rule.sourcePortRange && !rule.sourcePortRanges) {
+    rule.sourcePortRange = "*";
+  }
+
+  if (!rule.destinationAddressPrefix && !rule.destinationAddressPrefixes && !rule.destinationApplicationSecurityGroups) {
+    rule.destinationAddressPrefix = "*";
+  }
+
+  if (!rule.destinationPortRange && !rule.destinationPortRanges) {
+    rule.destinationPortRange = "*";
+  }
+}
+
 export class AzNsgTools extends CallableClassBase implements AzNsgTools {
 
   #invokers: CliInvokers;
@@ -63,32 +85,13 @@ export class AzNsgTools extends CallableClassBase implements AzNsgTools {
 
     let desiredRules = options?.rules?.map(d => {
       const result = { ...d };
-
-      if (!result.protocol) {
-        result.protocol = "*";
-      }
-
-      if (!result.sourceAddressPrefix && !result.sourceAddressPrefixes && !result.sourceApplicationSecurityGroups) {
-        result.sourceAddressPrefix = "*";
-      }
-
-      if (!result.sourcePortRange && !result.sourcePortRanges) {
-        result.sourcePortRange = "*";
-      }
-
-      if (!result.destinationAddressPrefix && !result.destinationAddressPrefixes && !result.destinationApplicationSecurityGroups) {
-        result.destinationAddressPrefix = "*";
-      }
-
-      if (!result.destinationPortRange && !result.destinationPortRanges) {
-        result.destinationPortRange = "*";
-      }
-
+      ensureRuleOptionsSet(result);
       return result;
     }) ?? [];
 
     if (!nsg) {
       nsg = {
+        name,
         location: options?.groupName ?? this.#context.location,
         securityRules: desiredRules,
       }
@@ -103,13 +106,12 @@ export class AzNsgTools extends CallableClassBase implements AzNsgTools {
         if (existing == null) {
           desiredIndex++;
         } else {
-          desiredRules.slice(desiredIndex, 1);
+          desiredRules.splice(desiredIndex, 1);
           existingRules.splice(existingIndex, 1);
           upsertRules.push({
             ...desired,
             etag: existing.etag,
             type: existing.type,
-            provisioningState: existing.provisioningState,
           });
         }
       }

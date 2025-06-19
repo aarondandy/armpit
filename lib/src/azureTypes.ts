@@ -33,3 +33,15 @@ export function isTenantId(value: unknown): value is TenantId {
 export function isNamedLocationDescriptor(resource?: any): resource is { name: string, location: string } {
   return resource != null && typeof resource.name === "string" && typeof resource.location === "string";
 }
+
+// type VirtualMachineCreateResult = {
+//   fqdns: string,
+//   id: string,
+//   location: string,
+//   macAddress: string,
+//   powerState: string,
+//   privateIpAddress: string,
+//   publicIpAddress: string,
+//   resourceGroup: string,
+//   zones: string
+// };

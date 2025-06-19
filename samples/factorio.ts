@@ -9,6 +9,8 @@ import type {
   NetworkInterface,
 } from "@azure/arm-network";
 import type {
+  Disk,
+  VirtualMachine,
   VirtualMachineExtension,
   RunCommandResult,
 } from "@azure/arm-compute";
@@ -77,7 +79,7 @@ const subnets = (async () => {
     vms: await buildSubnet("vms", 8),
   };
 })();
-subnets.then(subnets => console.log(`[net] subnets ${Object.keys(subnets).join(", ")}`));
+subnets.then(subnets => console.log(`[net] subnets ${Object.keys(subnets)}`));
 
 // -------------------
 // Server and Services
@@ -98,59 +100,46 @@ const nic = rg<NetworkInterface>`network nic create -n nic-${state.serverName}
   --network-security-group ${(await nsg).id} --asgs ${(await Promise.all([asgs.ssh, asgs.factorio])).map(asg => asg.name)}`;
 nic.then(nic => console.log(`[vm] nic ${nic.ipConfigurations?.[0]?.privateIPAddress}`));
 
-// TODO: Where the hell is this stuff defined? I don't see anything matching the shape in arm-compute.
-type VirtualMachineCreateResult = {
-  fqdns: string,
-  id: string,
-  location: string,
-  macAddress: string,
-  powerState: string,
-  privateIpAddress: string,
-  publicIpAddress: string,
-  resourceGroup: string,
-  zones: string
-};
+const osDisk = rg<Disk>`disk create -n os-${state.serverName}
+  --hyper-v-generation V2
+  --os-type Linux --image-reference Canonical:ubuntu-24_04-lts:server:latest
+  --sku Premium_LRS --size-gb 32`;
+osDisk.then(d => console.log(`[vm] disk ${d.name}`));
 
-const vmName = `vm-${state.serverName}`; // TODO: it would be better to get this from the vm variable after create
-const vm = (async () => {
-  // TODO: maybe the script should directly control the disk, so the VM can be recreated safely without data loss
-  const vm = await rg<VirtualMachineCreateResult>`vm create
-    -n ${vmName} --computer-name ${state.serverName}
-    --size Standard_D2als_v6
-    --os-disk-size-gb 32 --storage-sku Premium_LRS --os-disk-name ${vmName}-os
-    --image Canonical:ubuntu-24_04-lts:server:latest
-    --nics ${(await nic).id}
-    --assign-identity [system] --generate-ssh-keys`;
-    // TODO: make sure to set patch mode to Manual because video games!
-  console.log(`[vm] server ${vm.fqdns} ${vm.publicIpAddress}`);
-  return vm;
+let vm = (async () => {
+  const name = `vm-${state.serverName}`;
+  await rg`vm create
+    -n ${name} --computer-name ${state.serverName}
+    --size Standard_D2als_v6 --nics ${(await nic).id}
+    --attach-os-disk ${(await osDisk).name} --os-type linux
+    --assign-identity [system]`;
+  return await rg<VirtualMachine>`vm show -n ${name}`;
 })();
+vm.then(vm => console.log(`[vm] server ${vm.name}`));
 
-const vmExtensions = (async () => {
-  await vm; // TODO: it would be better if we had a vm.name
-  await rg<VirtualMachineExtension>`vm extension set --vm-name ${vmName} --name AADSSHLoginForLinux --publisher Microsoft.Azure.ActiveDirectory`;
-  console.log(`[vm] extension AADSSHLoginForLinux installed to ${vmName}`);
-})();
 const vmAuth = (async () => {
   const { userPrincipalName } = await az<any>`ad signed-in-user show`; // TODO: move into az.account or something and/or get types for it
   await az`role assignment create --assignee ${userPrincipalName} --role ${"Virtual Machine Administrator Login"} --scope ${(await vm).id}`;
-  console.log(`[vm] admin ${userPrincipalName} added to ${vmName}`);
+  console.log(`[vm] admin ${userPrincipalName} added to ${(await vm).name}`);
+})();
+const vmExtensions = (async () => {
+  await rg<VirtualMachineExtension>`vm extension set --vm-name ${(await vm).name} --name AADSSHLoginForLinux --publisher Microsoft.Azure.ActiveDirectory`;
+  console.log("[vm] extension AADSSHLoginForLinux installed");
 })();
 const vmConfig = (async () => {
-  await vm; // TODO: it would be better if we had a vm.name
   const scriptPath = path.join(import.meta.dirname, "factorio.init.sh");
-  const result = await rg<RunCommandResult>`vm run-command invoke --command-id RunShellScript -n ${vmName} --scripts ${"@" + scriptPath}`;
+  const result = await rg<RunCommandResult>`vm run-command invoke --command-id RunShellScript -n ${(await vm).name} --scripts ${"@" + scriptPath}`;
   console.log(`[vm] init script status: ${result.value?.map(s => s.displayStatus)}`);
 })();
 
 await Promise.all([
-  vmExtensions,
   vmAuth,
+  vmExtensions,
   vmConfig,
 ]);
 
 console.log(`
 The server is ready and the factory must grow.
 Connect: ${(await pip).dnsSettings?.fqdn} (${(await pip).ipAddress})
-Admin: az ssh vm -n ${vmName} -g ${rg.name}
+Admin: az ssh vm -n ${(await vm).name} -g ${rg.name}
 `);
