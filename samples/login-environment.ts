@@ -1,6 +1,6 @@
 import { loadMyConfig } from "./utils/state.js";
 import yargs from "yargs";
-import { az } from "armpit";
+import az from "armpit";
 import type { ResourceGroup } from "@azure/arm-resources";
 
 const myEnvironments = (await loadMyConfig()).envs;

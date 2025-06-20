@@ -8,14 +8,14 @@
     "module": "NodeNext",
     "noImplicitAny": true,
     "noUnusedLocals": true,
-    "outDir": "./dist/esm",
+    "outDir": "./dist/",
     "preserveConstEnums": true,
     "rootDir": "./src",
     "skipLibCheck": true,
     "sourceMap": true,
     "strict": true,
     "strictFunctionTypes": true,
-    "target": "ESNext"
+    "target": "es2022"
   },
   "include": [
     "src/index.ts"
@@ -23,6 +23,7 @@
   "exclude": [
     "dist",
     "node_modules",
-    "**/*.spec.ts"
+    "**/*.spec.ts",
+    "**/*.test.ts"
   ]
 }

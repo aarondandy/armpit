@@ -1,4 +1,4 @@
-import { az } from "armpit";
+import az from "armpit";
 
 let currentAccount = await az.account.show() ?? await az.account.login();
 if (!currentAccount) throw new Error("Account required");

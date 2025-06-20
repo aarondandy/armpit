@@ -1,5 +1,5 @@
 import yargs from "yargs";
-import { az, type Account } from "armpit";
+import az, { type Account } from "armpit";
 
 const argv = await yargs(process.argv.slice(2)).option({
   s: { type: "string", demandOption: false },

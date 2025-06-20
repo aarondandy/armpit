@@ -35,6 +35,7 @@ const az = (function(): AzGlobalInterface {
   return result;
 })();
 
+export default az;
 export {
   az,
   isSubscriptionId,

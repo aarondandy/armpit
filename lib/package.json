@@ -1,27 +1,22 @@
 {
   "name": "armpit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
-  "main": "dist/cjs/index.js",
-  "module": "dist/esm/index.js",
-  "types": "dist/esm/index.d.ts",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
   "exports": {
-    ".": {
-      "import": "./dist/esm/index.js",
-      "require": "./dist/cjs/index.js",
-      "types": "./dist/esm/index.d.ts"
-    }
+    "default": "./dist/index.js",
+    "types": "./dist/index.d.ts"
   },
   "scripts": {
     "clean": "shx rm -rf ./dist/**/*",
     "build": "run-s -l clean build:*",
     "build:esm": "tsc",
-    "build:cjs": "tsc -p ./tsconfig.cjs.json",
     "prepack": "shx cp ../LICENSE . && shx cp ../README.md .",
     "postpack": "shx rm LICENSE && shx rm README.md",
     "watch": "npm-run-all -l clean --parallel watch:*",
     "watch:esm": "tsc -w",
-    "watch:cjs": "tsc -w -p ./tsconfig.cjs.json",
     "lint": "tsc",
     "test": "vitest"
   },
