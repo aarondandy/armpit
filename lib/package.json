@@ -43,18 +43,18 @@
     "README.md"
   ],
   "devDependencies": {
-    "@types/node": "^22.15.24",
+    "@types/node": "^24.0.3",
     "npm-run-all": "^4.1.5",
     "shx": "^0.4.0",
     "typescript": "^5.8.3",
-    "vitest": "^3.2.2"
+    "vitest": "^3.2.4"
   },
   "dependencies": {
     "@azure/arm-network": "^34.0.0",
     "@azure/arm-resources": "^6.1.0",
     "@azure/arm-resources-subscriptions": "^2.1.0",
     "@azure/identity": "^4.10.1",
-    "execa": "^9.5.2",
+    "execa": "^9.6.0",
     "uuid": "^11.1.0"
   }
 }

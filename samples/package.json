@@ -10,11 +10,11 @@
     "@azure/arm-storage": "^18.5.0",
     "@azure/service-bus": "^7.9.5",
     "armpit": "file:../lib",
-    "yargs": "^17.7.2"
+    "yargs": "^18.0.0"
   },
   "devDependencies": {
-    "@types/node": "^22.15.24",
+    "@types/node": "^24.0.3",
     "@types/yargs": "^17.0.33",
-    "tsx": "^4.19.3"
+    "tsx": "^4.20.3"
   }
 }
