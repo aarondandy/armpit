@@ -1,6 +1,6 @@
 import az from "armpit";
 
-let currentAccount = await az.account.show() ?? await az.account.login();
+let currentAccount = await az.account.ensureActiveAccount();
 if (!currentAccount) throw new Error("Account required");
 
 const locations = await az.account.listLocations();

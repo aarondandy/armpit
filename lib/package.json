@@ -29,6 +29,11 @@
   ],
   "author": "aarondandy",
   "license": "MIT",
+  "repository": "github:aarondandy/armpit",
+  "homepage": "https://github.com/aarondandy/armpit#readme",
+  "bugs": {
+    "url": "https://github.com/aarondandy/armpit/issues"
+  },
   "engines": {
     "node": ">=18"
   },

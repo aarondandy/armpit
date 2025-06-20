@@ -176,6 +176,21 @@ export class AzAccountTools implements ArmpitCredentialProvider {
     }
   }
 
+  async ensureActiveAccount() {
+    let account = await this.show();
+
+    if (account == null) {
+      const accounts = await this.login();
+      account = accounts?.find(a => a.isDefault) ?? null;
+
+      if (account == null) {
+        throw new Error("Failed to ensure active account");
+      }
+    }
+
+    return account;
+  }
+
   async listLocations(names?: string[]) {
     let results : Location[];
     if (names != null && names.length > 0) {
