@@ -4,7 +4,7 @@ import {
   isSubscriptionIdOrName,
   isTenantId,
   isNamedLocationDescriptor
-} from "./azureTypes.js"
+} from "./azUtils.js"
 
 describe("isSubscriptionId", () => {
   it("undefined", () => expect(isSubscriptionId(undefined)).toBe(false));
