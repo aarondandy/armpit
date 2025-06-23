@@ -34,6 +34,10 @@ function getDataFolderPath() {
   return path.join(import.meta.dirname, "..", "data");
 }
 
+function isEntityNotFoundError(err: unknown): err is Error & { code: "ENOENT" } {
+   return err instanceof Error && (err as any).code === "ENOENT";
+}
+
 function findArgScriptName(): string | null {
   for (let i = 1; i < process.argv.length; i++) {
     const arg = process.argv[i];
@@ -70,7 +74,7 @@ export async function loadMyConfig() {
 
     return myConfig;
   } catch (err) {
-    if (err instanceof Error && "code" in err && err.code === "ENOENT" && "errno" in err && err.errno == -4058) {
+    if (err instanceof Error && isEntityNotFoundError(err)) {
       console.log(`Creating new config file: ${configPath}`);
       await writeConfigTemplate(configPath);
       throw new Error(`Configure with your details: ${configPath}`);
@@ -112,7 +116,7 @@ export async function loadState<TState>(name?: string) {
   try {
     state = <TState>JSON.parse(await fs.readFile(stateFilePath, "utf8"));
   } catch (err) {
-    if (err instanceof Error && "code" in err && err.code === "ENOENT" && "errno" in err && err.errno == -4058) {
+    if (err instanceof Error && isEntityNotFoundError(err)) {
       console.log(`Creating new state file: ${stateFilePath}`);
       state = { } as TState;
       await fs.writeFile(stateFilePath, JSON.stringify(state, null, 2));
