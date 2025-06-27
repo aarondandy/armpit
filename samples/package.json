@@ -6,7 +6,9 @@
   "private": true,
   "dependencies": {
     "@azure/arm-compute": "^22.4.0",
+    "@azure/arm-privatedns": "^3.3.0",
     "@azure/arm-servicebus": "^6.1.0",
+    "@azure/arm-sql": "^10.0.0",
     "@azure/arm-storage": "^18.5.0",
     "@azure/service-bus": "^7.9.5",
     "armpit": "file:../lib",
