@@ -2,7 +2,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { az, NameHash } from "armpit";
 import { loadMyEnvironment } from "./utils/state.js";
 import type { SBNamespace, SBQueue } from "@azure/arm-servicebus";
-import { ServiceBusClient } from "@azure/service-bus";
+import { ServiceBusClient, type ServiceBusError } from "@azure/service-bus";
 
 const targetEnvironment = await loadMyEnvironment("samples");
 const targetLocation = targetEnvironment.defaultLocation ?? "centralus";
@@ -46,7 +46,13 @@ try {
     try {
       receiver.subscribe({
         processMessage: async (m) => console.log("received", m.enqueuedTimeUtc, m.body),
-        processError: async (e) => console.log("OOPS!", e),
+        processError: async (e) => {
+          if ((e?.error as ServiceBusError)?.code === "UnauthorizedAccess") {
+            console.log("Unauthorized access probably means things are still warming up. Hopefully...", e);
+          } else {
+            console.log("OOPS!", e);
+          }
+        },
       });
 
       await senderPromise; // Wait until sending has completed...
