@@ -12,14 +12,31 @@ import {
 } from "./azUtils.js";
 import { ArmpitCredential, ArmpitCredentialOptions, ArmpitCredentialProvider } from "./armpitCredential.js";
 
+interface AzAccountListOptions {
+  all?: boolean,
+  refresh?: boolean,
+}
+
+/**
+ * Tools to work with Azure CLI accounts.
+ * @remarks
+ * Accounts roughly approximate a subscription accessed by a user via the Azure CLI.
+ */
 export class AzAccountTools implements ArmpitCredentialProvider {
 
+  /** Invokers associated with a global Azure CLI shell */
   #invokers: AzCliInvokers;
 
   constructor(invokers: AzCliInvokers) {
     this.#invokers = invokers;
   }
 
+  /**
+   * Shows the current active Azure CLI account.
+   * @returns The current Azure CLI account, if available.
+   * @remarks
+   * This effectively invokes `az account show`.
+   */
   async show() {
     try {
       return await this.#invokers.lax<Account>`account show`;
@@ -33,21 +50,28 @@ export class AzAccountTools implements ArmpitCredentialProvider {
     }
   }
 
-  async list(opt?: {all?: boolean, refresh?: boolean}) : Promise<Account[]> {
-    let flags: string[] | undefined;
-    if (opt) {
-      flags = [];
-      if (opt.all) {
-        flags.push("--all");
+  /**
+   * Lists accounts known to the Azure CLI instance.
+   * @param options Query options.
+   * @returns The accounts known to the Azure CLI instance.
+   * @remarks
+   * This effectively invokes `az account list`.
+   */
+  async list(options?: AzAccountListOptions) : Promise<Account[]> {
+    let args: string[] | undefined;
+    if (options) {
+      args = [];
+      if (options.all) {
+        args.push("--all");
       }
-      if (opt.refresh) {
-        flags.push("--refresh");
+      if (options.refresh) {
+        args.push("--refresh");
       }
     }
 
     let results: Account[] | null;
-    if (flags && flags.length > 0) {
-      results = await this.#invokers.lax<Account[]>`account list ${flags}`;
+    if (args && args.length > 0) {
+      results = await this.#invokers.lax<Account[]>`account list ${args}`;
     } else {
       results = await this.#invokers.lax<Account[]>`account list`;
     }
@@ -55,11 +79,26 @@ export class AzAccountTools implements ArmpitCredentialProvider {
     return results ?? [];
   }
 
+  /**
+   * Sets the active account to the given subscription ID or name.
+   * @param subscriptionIdOrName The subscription ID or name to switch the account to.
+   * @remarks
+   * This effectively invokes `az account set`.
+   */
   async set(subscriptionIdOrName: SubscriptionIdOrName) {
-    await this.#invokers.lax<Account>`account set -s ${subscriptionIdOrName}`;
+    await this.#invokers.lax<Account>`account set --subscription ${subscriptionIdOrName}`;
   }
 
+  /**
+   * Sets the active account to the given subscription or initiates a login if required.
+   * @param subscriptionIdOrName The subscription ID or name to set the account to.
+   * @param tenantId The tenant to log into when required.
+   */
   async setOrLogin(subscriptionIdOrName: SubscriptionIdOrName, tenantId?: TenantId): Promise<Account | null>;
+  /**
+   * Sets the active account to the given subscription or initiates a login if required.
+   * @param criteria The selection criteria for the account.
+   */
   async setOrLogin(criteria: {subscriptionId: SubscriptionId, tenantId?: TenantId}): Promise<Account | null>;
   async setOrLogin(criteria: any, secondArg?: any): Promise<Account | null> {
     let subscription: SubscriptionId | SubscriptionIdOrName;
@@ -155,6 +194,11 @@ export class AzAccountTools implements ArmpitCredentialProvider {
     return account;
   }
 
+  /**
+   * Initiates an Azure CLI login.
+   * @param tenantId The tenant to log into.
+   * @returns An account if login is successful.
+   */
   async login(tenantId?: string) : Promise<Account[] | null> {
     try {
       let loginAccounts : Account[] | null;
@@ -176,6 +220,10 @@ export class AzAccountTools implements ArmpitCredentialProvider {
     }
   }
 
+  /**
+   * Provides the current account or initiates a login if required.
+   * @returns A logged in account when successful.
+   */
   async ensureActiveAccount() {
     let account = await this.show();
 
@@ -191,6 +239,11 @@ export class AzAccountTools implements ArmpitCredentialProvider {
     return account;
   }
 
+  /**
+   * Lits Azure locations.
+   * @param names The location names to filter locations to.
+   * @returns A lot of Azure locations.
+   */
   async listLocations(names?: string[]) {
     let results : Location[];
     if (names != null && names.length > 0) {

@@ -14,9 +14,19 @@ export interface ArmpitCredentialOptions {
   subscription?: SubscriptionIdOrName,
 }
 
+/**
+ * Provides access tokens from the current Azure CLI invoker.
+ * @remarks
+ * This class is intended to be instantiated internally and exposed as a TokenCredential.
+ * The implementation is similar to AzureCliCredential but using armpit invokers.
+ */
 export class ArmpitCredential implements TokenCredential {
+
+  /** The invokers to get tokens from. */
   #invokers: AzCliInvokers;
+  /** The configured tenant ID override. */
   #overrideTenantId?: TenantId;
+  /** The configured subscription ID override. */
   #overrideSubscription?: SubscriptionIdOrName;
 
   constructor(invokers: AzCliInvokers, options?: ArmpitCredentialOptions) {
@@ -77,6 +87,14 @@ export class ArmpitCredential implements TokenCredential {
   }
 }
 
+/**
+ * Provides a token credential associated with the context of the provider.
+ */
 export interface ArmpitCredentialProvider {
+  /**
+   * Get a token credential associated within the context it is retrieved from.
+   *
+   * @param options Override how tokens are generated.
+   */
   getCredential(options?: ArmpitCredentialOptions): ArmpitCredential;
 }
