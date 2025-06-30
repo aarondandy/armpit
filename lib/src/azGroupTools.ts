@@ -7,7 +7,7 @@ import {
   extractSubscriptionId,
 } from "./azUtils.js";
 import { execaAzCliInvokerFactory, type AzCliInvokers } from "./azCliUtils.js";
-import { ArmpitCredential, ArmpitCredentialOptions } from "./armpitCredential.js";
+import { buildCredential, type ArmpitCredentialOptions } from "./armpitCredential.js";
 import { AzGroupInterface } from "./interface.js";
 import { AzNsgTools } from "./azNsgTools.js";
 
@@ -101,7 +101,7 @@ export class AzGroupTools extends CallableClassBase implements AzGroupTools {
       strict: invoker.strict,
       lax: invoker.lax,
       nsg: new AzNsgTools(invoker, context),
-      getCredential: (options?: ArmpitCredentialOptions) => new ArmpitCredential(invoker, { subscription: subscriptionId ?? undefined, ...options }),
+      getCredential: (options?: ArmpitCredentialOptions) => buildCredential(invoker, { subscription: subscriptionId ?? undefined, ...options }),
     });
   }
 

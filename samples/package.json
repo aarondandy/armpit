@@ -5,6 +5,7 @@
   "scripts": {},
   "private": true,
   "dependencies": {
+    "@azure/arm-appcontainers": "^2.2.0",
     "@azure/arm-compute": "^22.4.0",
     "@azure/arm-privatedns": "^3.3.0",
     "@azure/arm-servicebus": "^6.1.0",
@@ -12,9 +13,11 @@
     "@azure/arm-storage": "^18.5.0",
     "@azure/service-bus": "^7.9.5",
     "armpit": "file:../lib",
+    "mssql": "^11.0.1",
     "yargs": "^18.0.0"
   },
   "devDependencies": {
+    "@types/mssql": "^9.1.7",
     "@types/node": "^24.0.3",
     "@types/yargs": "^17.0.33",
     "tsx": "^4.20.3"

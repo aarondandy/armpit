@@ -4,7 +4,7 @@ import { NetworkManagementClient } from "@azure/arm-network";
 import { CallableClassBase } from "./tsUtils.js";
 import { handleGet } from "./azSdkUtils.js";
 import type { AzCliInvokers } from "./azCliUtils.js";
-import { ArmpitCredential } from "./armpitCredential.js";
+import { buildCredential } from "./armpitCredential.js";
 
 interface AzNsgToolsContext {
   groupName?: string,
@@ -68,7 +68,7 @@ export class AzNsgTools extends CallableClassBase implements AzNsgTools {
     // const credential = new AzureCliCredential({
     //   subscription: subscriptionId,
     // });
-    const credential = new ArmpitCredential(this.#invokers, { subscription: subscriptionId });
+    const credential = buildCredential(this.#invokers, { subscription: subscriptionId });
     const client = subscriptionId
       ? new NetworkManagementClient(credential, subscriptionId)
       : new NetworkManagementClient(credential);

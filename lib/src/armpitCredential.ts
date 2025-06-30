@@ -1,4 +1,4 @@
-import type { AccessToken, TokenCredential, GetTokenOptions } from "@azure/identity";
+import type { AccessToken, TokenCredential, GetTokenOptions } from "@azure/core-auth";
 import {
   type TenantId,
   isTenantId,
@@ -20,29 +20,20 @@ export interface ArmpitCredentialOptions {
  * This class is intended to be instantiated internally and exposed as a TokenCredential.
  * The implementation is similar to AzureCliCredential but using armpit invokers.
  */
-export class ArmpitCredential implements TokenCredential {
+export interface ArmpitCredential extends TokenCredential { }
 
-  /** The invokers to get tokens from. */
-  #invokers: AzCliInvokers;
-  /** The configured tenant ID override. */
-  #overrideTenantId?: TenantId;
-  /** The configured subscription ID override. */
-  #overrideSubscription?: SubscriptionIdOrName;
-
-  constructor(invokers: AzCliInvokers, options?: ArmpitCredentialOptions) {
-    this.#invokers = invokers;
-    this.#overrideTenantId = options?.tenantId;
-    if (this.#overrideTenantId && !isTenantId(this.#overrideTenantId)) {
-      throw new Error("Invalid tenant ID.");
-    }
-
-    this.#overrideSubscription = options?.subscription;
-    if (this.#overrideSubscription && !isSubscriptionIdOrName(this.#overrideSubscription)) {
-      throw new Error("Invalid subscription name or subscription ID.");
-    }
+export function buildCredential(invokers: AzCliInvokers, options?: ArmpitCredentialOptions): ArmpitCredential {
+  const overrideTenantId = options?.tenantId;
+  if (overrideTenantId && !isTenantId(overrideTenantId)) {
+    throw new Error("Invalid tenant ID.");
   }
 
-  async getToken(scopes: string | string[], options: GetTokenOptions = {}): Promise<AccessToken> {
+  const overrideSubscription = options?.subscription;
+  if (overrideSubscription && !isSubscriptionIdOrName(overrideSubscription)) {
+    throw new Error("Invalid subscription name or subscription ID.");
+  }
+
+  const getToken = async function(scopes: string | string[], options: GetTokenOptions = {}): Promise<AccessToken> {
     // This is loosely based on AzureCliCredential but uses the internals provided by this library
 
     if (typeof scopes === "string") {
@@ -55,15 +46,15 @@ export class ArmpitCredential implements TokenCredential {
 
     const args: string[] = ["--scope", ...scopes];
 
-    if (this.#overrideTenantId) {
-      args.push("--tenant", this.#overrideTenantId);
+    if (overrideTenantId) {
+      args.push("--tenant", overrideTenantId);
     }
 
-    if (this.#overrideSubscription) {
-      args.push("--subscription", this.#overrideSubscription);
+    if (overrideSubscription) {
+      args.push("--subscription", overrideSubscription);
     }
 
-    const result = await this.#invokers.strict<AzCliAccessToken>`account get-access-token ${args}`;
+    const result = await invokers.strict<AzCliAccessToken>`account get-access-token ${args}`;
 
     let expiresOn = Number.parseInt(result.expires_on as any, 10) * 1000;
     if (isNaN(expiresOn)) {
@@ -85,6 +76,11 @@ export class ArmpitCredential implements TokenCredential {
       tokenType,
     };
   }
+
+  // A normal object is returned so libraries like tedious/mssql can be compatible.
+  return {
+    getToken
+  };
 }
 
 /**
