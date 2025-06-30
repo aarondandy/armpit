@@ -15,6 +15,7 @@ import { Server as SqlServer } from "@azure/arm-sql";
 
 const targetEnvironment = await loadMyEnvironment("samples");
 const targetLocation = targetEnvironment.defaultLocation ?? "centralus";
+const account = await az.account.setOrLogin(targetEnvironment);
 
 const myIp = fetch("https://api.ipify.org/").then(r => r.text());
 const { userPrincipalName, id: userPrincipalId } = await az<any>`ad signed-in-user show`; // TODO: move into az.account or something and/or get types for it
@@ -121,20 +122,11 @@ const app = (async() => {
   // Remaking the app each time causes issues. An upsert would work much better.
   const { properties, systemData, ...otherResults } = await rg<ContainerAppCreateResponse>`containerapp create
     --name app-sample-${resourceHash}-${rg.location} --environment ${env.id}
-    --image ${"atlassian/jira-software"}
+    --image ${"orchardproject/orchardcore-cms-linux:latest"}
     --ingress external --target-port 80`;
-  // "orchardproject/orchardcore-cms-linux:latest"
+  // "atlassian/jira-software" may be an option ... maybe
   const app = { ...otherResults, ...properties } as ContainerApp;
   const appIdentity = await rg<Identity>`containerapp identity assign --name ${app.name} --system-assigned`;
-  // TODO: permission the app to the database
-  // TODO: configure the app via env vars
-
-  // const sqlConnectionString = `Server=${(await dbServer).name}.database.windows.net;Database=${(await db).name};Tenant Id=${targetEnvironment.tenantId ?? account?.tenantId};Authentication=Active Directory Integrated;`;
-  // const saConnectionString = ``;
-  // const environmentVariables = [
-  //   `OrchardCore__ConnectionString=${sqlConnectionString}`,
-  //   "OrchardCore__DatabaseProvider=SqlConnection",
-  // ];
 
   const pool = new mssql.ConnectionPool({
     server: `${(await dbServer).name}.database.windows.net`,
@@ -153,12 +145,16 @@ const app = (async() => {
     await pool.close();
   }
 
-  const sqlConnectionString = `jdbc:sqlserver://${(await dbServer).name}.database.windows.net:1433;databaseName=${(await db).name};authentication=ActiveDirectoryManagedIdentity;encrypt=true;trustServerCertificate=false;`;
+  // const sqlConnectionString = `jdbc:sqlserver://${(await dbServer).name}.database.windows.net:1433;databaseName=${(await db).name};authentication=ActiveDirectoryManagedIdentity;encrypt=true;trustServerCertificate=false;`;
+  // const environmentVariables = [
+  //   `JDBC_URL=${sqlConnectionString}`,
+  //   "JIRA_DB_TYPE=sqlserver",
+  // ]
+  const sqlConnectionString = `Server=${(await dbServer).name}.database.windows.net;Database=${(await db).name};Tenant Id=${targetEnvironment.tenantId ?? account?.tenantId};Authentication=Active Directory Integrated;`;
   const environmentVariables = [
-    `JDBC_URL=${sqlConnectionString}`,
-    "JIRA_DB_TYPE=sqlserver",
-    ""
-  ]
+    `OrchardCore__ConnectionString=${sqlConnectionString}`,
+    "OrchardCore__DatabaseProvider=SqlConnection",
+  ];
   await rg`containerapp update --name ${app.name} --set-env-vars ${environmentVariables}`;
 
   return app;
