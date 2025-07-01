@@ -1,0 +1,46 @@
+﻿@page
+@model Numbers.IndexModel
+@{
+}
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Numbers</title>
+</head>
+<body>
+
+  <h2>Science Area</h2>
+  <form method="post">
+    <div>
+      <label for="Guess">What's the largest number you can think of?</label>
+    </div>
+    <input type="number" id="Guess" name="Guess" min="1" step="1" value="@Model.Guess" autofocus required>
+    <button type="submit">Discover a new number</button>
+  </form>
+
+  <hr />
+  <h2>Results Area</h2>
+  <div>
+    @if (Model.Guess < 1)
+    {
+      <div>Is that even a number?</div>
+    }
+    @if (Model.Guess > Model.LargestKnownNumber)
+    {
+      <div>That probably isn't a real number, but some mathematicians suspect larger numbers may be possible. Maybe even @((Model.LargestKnownNumber + 1).ToString("N0"))?</div>
+    }
+
+    <div>
+      Research of @((Model.Stats.Count).ToString("N0")) numbers has shown that the largest number is @((Model.Stats.Max).ToString("N0")).
+    </div>
+  </div>
+
+  <hr />
+  <h2>Instructions</h2>
+  <div>
+    <blink><marquee><a href="https://vimeo.com/77451201#t=77.81" target="_blank">Click here for detailed instructions.</a></marquee></blink>
+  </div>
+
+</body>
+</html>
