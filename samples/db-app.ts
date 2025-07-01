@@ -6,7 +6,6 @@ import type { Subnet, VirtualNetwork, PrivateEndpoint } from "@azure/arm-network
 import type { PrivateZone, VirtualNetworkLink } from "@azure/arm-privatedns";
 import type { ManagedEnvironment, ContainerApp, Resource as ContainerAppResource } from "@azure/arm-appcontainers";
 import type { Database as SqlDatabase } from "@azure/arm-sql";
-
 import { Server as SqlServer } from "@azure/arm-sql";
 
 // --------------------------
@@ -45,7 +44,7 @@ const subnets = (async () => {
 })();
 subnets.then(subnets => console.log(`[net] subnets ${Object.keys(subnets)}`));
 
-const dns = (async () => {
+const dbDnsZone = (async () => {
   const zoneName = "privatelink.database.windows.net";
   // TODO: an API helper may work better here
   const dns = await rg.lax<PrivateZone>`network private-dns zone show --name ${zoneName}`
@@ -56,7 +55,7 @@ const dns = (async () => {
 
 (async () => {
   const linkName = `pdlink-sampledb-${rg.location}`;
-  const { name: zoneName } = await dns;
+  const { name: zoneName } = await dbDnsZone;
   // TODO: an API helper may work better here
   let link = await rg.lax<VirtualNetworkLink>`network private-dns link vnet show --name ${linkName} --zone-name ${zoneName}`
   // TODO: check to make sure the vnet matches correctly
@@ -82,6 +81,28 @@ const db = (async () => {
   return db;
 })();
 
+const runOnDb = async (action: (pool: mssql.ConnectionPool) => Promise<void>) => {
+  const pool = new mssql.ConnectionPool({
+    server: `${(await dbServer).name}.database.windows.net`,
+    database: (await db).name,
+    authentication: { type: "token-credential", options: { credential: rg.getCredential() } }
+  });
+  try {
+    await pool.connect();
+    await action(pool);
+  }
+  finally {
+    await pool.close();
+  }
+};
+runOnDb(async (pool) => {
+  const statements = [
+    "IF OBJECT_ID('NumberSearch', 'U') IS NULL CREATE TABLE NumberSearch ([Value] BIGINT NOT NULL);",
+    "IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_NumberSearch_Value' AND object_id = OBJECT_ID('NumberSearch')) CREATE CLUSTERED INDEX IX_NumberSearch_Value ON NumberSearch ([Value]);"
+  ];
+  await pool.request().query(statements.join("\n"));
+});
+
 (async () => {
   const address = await myIp;
   await rg`sql server firewall-rule create -n MyRule --server ${(await dbServer).name}
@@ -95,6 +116,10 @@ const db = (async () => {
     --name ${name} --connection-name ${name} --nic-name ${name}
     --group-id sqlServer --private-connection-resource-id ${(await dbServer).id}
     --vnet-name ${(await vnet).name} --subnet ${(await subnets).database.name}`;
+  const { name: zoneName, id: zoneId } = await dbDnsZone;
+  await rg`network private-endpoint dns-zone-group create
+    --name ${name} --endpoint-name ${privateEndpoint.name}
+    --private-dns-zone ${zoneId} --zone-name ${zoneName}`;
   console.log(`[db] private endpoint ${privateEndpoint.name} ready`);
 })();
 
@@ -117,47 +142,41 @@ const containerAppEnv = (async() => {
 // TODO: reduce the line breaks that come from containerapp commands. Likely due to a progress spinner.
 
 const app = (async() => {
-  const env = await containerAppEnv;
-  type ContainerAppCreateResponse = ContainerAppResource & { properties: ContainerApp };
-  // Remaking the app each time causes issues. An upsert would work much better.
-  const { properties, systemData, ...otherResults } = await rg<ContainerAppCreateResponse>`containerapp create
-    --name app-sample-${resourceHash}-${rg.location} --environment ${env.id}
-    --image ${"orchardproject/orchardcore-cms-linux:latest"}
-    --ingress external --target-port 80`;
-  // "atlassian/jira-software" may be an option ... maybe
-  const app = { ...otherResults, ...properties } as ContainerApp;
-  const appIdentity = await rg<Identity>`containerapp identity assign --name ${app.name} --system-assigned`;
+  const appEnv = await containerAppEnv;
 
-  const pool = new mssql.ConnectionPool({
-    server: `${(await dbServer).name}.database.windows.net`,
-    database: (await db).name,
-    authentication: { type: "token-credential", options: { credential: rg.getCredential() } }
-  });
-  try {
-    await pool.connect();
-    const username = app.name;
+  const appName = `app-sample-${resourceHash}-${rg.location}`;
+  const sqlConnectionString = `Server=${(await dbServer).name}.database.windows.net;Database=${(await db).name};Authentication=Active Directory Managed Identity;`;
+  const envVars = [
+    `ConnectionStrings__MyDatabase=${sqlConnectionString}`,
+    "FOO=BAR",
+  ];
+
+  await runOnDb(async (pool) => {
+    const username = appName;
     const statements = [
       `IF NOT EXISTS (SELECT 1 FROM sys.sysusers WHERE [name] = '${username}') CREATE USER [${username}] FROM EXTERNAL PROVIDER;`,
       ...["db_datareader", "db_datawriter", "db_ddladmin"].map(role => `EXEC sp_addrolemember [${role}],[${username}];`),
     ];
     await pool.request().query(statements.join("\n"));
-  } finally {
-    await pool.close();
-  }
+  });
+  console.log(`[app] pre-permissioned ${appName} to database`);
 
-  // const sqlConnectionString = `jdbc:sqlserver://${(await dbServer).name}.database.windows.net:1433;databaseName=${(await db).name};authentication=ActiveDirectoryManagedIdentity;encrypt=true;trustServerCertificate=false;`;
-  // const environmentVariables = [
-  //   `JDBC_URL=${sqlConnectionString}`,
-  //   "JIRA_DB_TYPE=sqlserver",
-  // ]
-  const sqlConnectionString = `Server=${(await dbServer).name}.database.windows.net;Database=${(await db).name};Tenant Id=${targetEnvironment.tenantId ?? account?.tenantId};Authentication=Active Directory Integrated;`;
-  const environmentVariables = [
-    `OrchardCore__ConnectionString=${sqlConnectionString}`,
-    "OrchardCore__DatabaseProvider=SqlConnection",
-  ];
-  await rg`containerapp update --name ${app.name} --set-env-vars ${environmentVariables}`;
+  // Remaking the app each time causes issues. An upsert would work much better.
+  type ContainerAppCreateResponse = ContainerAppResource & { properties: ContainerApp };
+  const { properties, systemData, ...otherResults } = await rg<ContainerAppCreateResponse>`containerapp create
+    --name ${appName} --environment ${appEnv.id}
+    --image ${"aarondandy/numbers:latest"}
+    --ingress external --target-port 8080
+    --env-vars ${envVars}
+    --system-assigned`;
+  const app = { ...otherResults, ...properties } as ContainerApp;
+  // const appIdentity = await rg<Identity>`containerapp identity assign --name ${app.name} --system-assigned`;
+  console.log(`[app] ${app.name} recreated`);
+
+  await rg`containerapp update --name ${app.name} --replace-env-vars ${envVars}`;
+  console.log("[app] Set env vars");
 
   return app;
 })();
 
-console.log(`[app] app ready ${"https://" + (await app).latestRevisionFqdn}`);
+console.log(`[app] app revision ready ${"https://" + (await app).latestRevisionFqdn}`);
