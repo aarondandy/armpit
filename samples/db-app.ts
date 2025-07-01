@@ -1,12 +1,10 @@
 import { az, NameHash } from "armpit";
 import { loadMyEnvironment } from "./utils/state.js";
 import mssql from "mssql";
-import type { Identity } from "@azure/arm-resources";
 import type { Subnet, VirtualNetwork, PrivateEndpoint } from "@azure/arm-network";
 import type { PrivateZone, VirtualNetworkLink } from "@azure/arm-privatedns";
 import type { ManagedEnvironment, ContainerApp, Resource as ContainerAppResource } from "@azure/arm-appcontainers";
-import type { Database as SqlDatabase } from "@azure/arm-sql";
-import { Server as SqlServer } from "@azure/arm-sql";
+import type { Server as SqlServer, Database as SqlDatabase } from "@azure/arm-sql";
 
 // --------------------------
 // Environment & Subscription
@@ -14,7 +12,7 @@ import { Server as SqlServer } from "@azure/arm-sql";
 
 const targetEnvironment = await loadMyEnvironment("samples");
 const targetLocation = targetEnvironment.defaultLocation ?? "centralus";
-const account = await az.account.setOrLogin(targetEnvironment);
+await az.account.setOrLogin(targetEnvironment);
 
 const myIp = fetch("https://api.ipify.org/").then(r => r.text());
 const { userPrincipalName, id: userPrincipalId } = await az<any>`ad signed-in-user show`; // TODO: move into az.account or something and/or get types for it
