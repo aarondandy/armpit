@@ -1,7 +1,7 @@
 import { ArmpitCredentialProvider } from "./armpitCredential.js";
-import { AzAccountTools } from "./azAccountTools.js";
+import { AzAccountTools } from "./accountTools.js";
 import { AzGroupTools } from "./azGroupTools.js";
-import { AzNsgTools } from "./azNsgTools.js";
+import { NetworkManagementTools } from "./networkManagementTools.js";
 import { AzTemplateExpression } from "./azCliUtils.js";
 
 export interface AzCliInvokable {
@@ -26,7 +26,7 @@ export interface AzLocationBound {
 export interface AzGroupBound extends AzLocationBound, ArmpitCredentialProvider {
   readonly name: string;
   readonly subscriptionId?: string;
-  readonly nsg: AzNsgTools;
+  readonly network: NetworkManagementTools;
 }
 
 export interface AzGroupInterface extends AzGroupBound, AzCliInvokable {

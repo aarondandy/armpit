@@ -69,7 +69,7 @@ function extractWrappedResponsePropertyName(response: any): string | null {
   return null;
 }
 
-export interface AzCliInvokers {
+export interface AzCliInvoker {
   strict: <T>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]) => Promise<T>;
   lax: <T>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]) => Promise<T | null>;
 }
@@ -81,7 +81,7 @@ interface CliInvokerFnFactoryOptions {
 
 type InvokerFnFactory = <TOptions extends CliInvokerFnFactoryOptions>(options: TOptions) => <TResult>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]) => Promise<TOptions extends { laxParsing: true } ? (TResult | null) : TResult>;
 
-export function execaAzCliInvokerFactory<TInvokerOptions extends InvokerOptions>(options: TInvokerOptions): AzCliInvokers {
+export function execaAzCliInvokerFactory<TInvokerOptions extends InvokerOptions>(options: TInvokerOptions): AzCliInvoker {
   const env: NodeJS.ProcessEnv = {
     ...options.env,
     AZURE_CORE_OUTPUT: "json", // request json by default

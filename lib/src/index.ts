@@ -3,13 +3,15 @@ import {
   type ResourceSummary,
   isSubscriptionId,
   isTenantId,
-} from "./azUtils.js";
+} from "./azureUtils.js";
 import { NameHash } from "./nameHash.js";
 import { ExistingGroupLocationConflictError, GroupNotEmptyError } from "./errors.js";
 import { execaAzCliInvokerFactory } from "./azCliUtils.js";
-import { AzAccountTools } from "./azAccountTools.js";
+import { ManagementClientFactory } from "./azureSdkUtils.js";
+import { AzAccountTools } from "./accountTools.js";
 import { AzGroupTools } from "./azGroupTools.js";
 import { AzGlobalInterface } from "./interface.js";
+import { ArmpitCliCredentialFactory } from "./armpitCredential.js";
 
 export type {
   Account,
@@ -22,10 +24,12 @@ const az = (function(): AzGlobalInterface {
     laxParsing: false,
   });
   const mainFn = invoker.strict;
-  const accountTools = new AzAccountTools(invoker);
+  const credentialFactory = new ArmpitCliCredentialFactory(invoker);
+  const managementClientFactory = new ManagementClientFactory(credentialFactory);
+  const accountTools = new AzAccountTools(invoker, credentialFactory);
   const cliResult = Object.assign(mainFn, {
     account: accountTools,
-    group: new AzGroupTools(invoker, { })
+    group: new AzGroupTools(invoker, credentialFactory, managementClientFactory, { })
   });
   let result = Object.assign(cliResult, {
     strict: invoker.strict,

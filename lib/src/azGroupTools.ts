@@ -5,11 +5,12 @@ import {
   type ResourceSummary,
   isNamedLocationDescriptor,
   extractSubscriptionId,
-} from "./azUtils.js";
-import { execaAzCliInvokerFactory, type AzCliInvokers } from "./azCliUtils.js";
-import { buildCredential, type ArmpitCredentialOptions } from "./armpitCredential.js";
+} from "./azureUtils.js";
+import { execaAzCliInvokerFactory, type AzCliInvoker } from "./azCliUtils.js";
+import { ManagementClientFactory } from "./azureSdkUtils.js";
+import type { ArmpitCredentialOptions, ArmpitCliCredentialFactory } from "./armpitCredential.js";
 import { AzGroupInterface } from "./interface.js";
-import { AzNsgTools } from "./azNsgTools.js";
+import { NetworkManagementTools } from "./networkManagementTools.js";
 
 export interface AzGroupTools {
   (name: string, location: string): Promise<AzGroupInterface>;
@@ -18,12 +19,16 @@ export interface AzGroupTools {
 
 export class AzGroupTools extends CallableClassBase implements AzGroupTools {
 
-  #invokers: AzCliInvokers;
+  #invokers: AzCliInvoker;
+  #credentialFactory: ArmpitCliCredentialFactory;
+  #managementClientFactory: ManagementClientFactory;
   #context: { location?: string };
 
-  constructor(invokers: AzCliInvokers, context: { location?: string }) {
+  constructor(invokers: AzCliInvoker, credentialFactory: ArmpitCliCredentialFactory, managementClientFactory: ManagementClientFactory, context: { location?: string }) {
     super();
     this.#invokers = invokers;
+    this.#credentialFactory = credentialFactory;
+    this.#managementClientFactory = managementClientFactory;
     this.#context = context;
   }
 
@@ -42,7 +47,7 @@ export class AzGroupTools extends CallableClassBase implements AzGroupTools {
         name: nameOrDescriptor,
         location: secondArg ?? this.#getRequiredDefaultLocation()
       };
-    } else if ("name" in nameOrDescriptor) {
+    } else if (nameOrDescriptor.name != null) {
       // overload: {name, location}
 
       if (typeof nameOrDescriptor.name !== "string") {
@@ -100,8 +105,14 @@ export class AzGroupTools extends CallableClassBase implements AzGroupTools {
     return Object.assign(cliResult, {
       strict: invoker.strict,
       lax: invoker.lax,
-      nsg: new AzNsgTools(invoker, context),
-      getCredential: (options?: ArmpitCredentialOptions) => buildCredential(invoker, { subscription: subscriptionId ?? undefined, ...options }),
+      network: new NetworkManagementTools(this.#managementClientFactory, context),
+      getCredential: (options?: ArmpitCredentialOptions) => {
+        if (subscriptionId) {
+          options = { subscription: subscriptionId, ...options };
+        }
+
+        return this.#credentialFactory.getCredential(options);
+      },
     });
   }
 

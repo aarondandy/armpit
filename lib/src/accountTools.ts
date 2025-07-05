@@ -1,6 +1,6 @@
 import type { ExecaError } from "execa";
 import type { Location } from "@azure/arm-resources-subscriptions";
-import type { AzCliInvokers } from "./azCliUtils.js";
+import type { AzCliInvoker } from "./azCliUtils.js";
 import {
   type Account,
   type SubscriptionIdOrName,
@@ -9,8 +9,13 @@ import {
   isSubscriptionId,
   type TenantId,
   isTenantId,
-} from "./azUtils.js";
-import { buildCredential, type ArmpitCredentialProvider, type ArmpitCredential, type ArmpitCredentialOptions } from "./armpitCredential.js";
+} from "./azureUtils.js";
+import {
+  type ArmpitCredentialProvider,
+  type ArmpitCredential,
+  type ArmpitCredentialOptions,
+  ArmpitCliCredentialFactory
+} from "./armpitCredential.js";
 
 interface AzAccountListOptions {
   all?: boolean,
@@ -25,10 +30,12 @@ interface AzAccountListOptions {
 export class AzAccountTools implements ArmpitCredentialProvider {
 
   /** Invokers associated with a global Azure CLI shell */
-  #invokers: AzCliInvokers;
+  #invoker: AzCliInvoker;
+  #credentialFactory: ArmpitCliCredentialFactory;
 
-  constructor(invokers: AzCliInvokers) {
-    this.#invokers = invokers;
+  constructor(invoker: AzCliInvoker, credentialFactory?: ArmpitCliCredentialFactory) {
+    this.#invoker = invoker;
+    this.#credentialFactory = credentialFactory ?? new ArmpitCliCredentialFactory(invoker);
   }
 
   /**
@@ -39,7 +46,7 @@ export class AzAccountTools implements ArmpitCredentialProvider {
    */
   async show() {
     try {
-      return await this.#invokers.lax<Account>`account show`;
+      return await this.#invoker.lax<Account>`account show`;
     } catch (invocationError) {
       const stderr = (<ExecaError>invocationError)?.stderr;
       if (stderr && typeof stderr === "string" && (/az login|az account set/i).test(stderr)) {
@@ -71,9 +78,9 @@ export class AzAccountTools implements ArmpitCredentialProvider {
 
     let results: Account[] | null;
     if (args && args.length > 0) {
-      results = await this.#invokers.lax<Account[]>`account list ${args}`;
+      results = await this.#invoker.lax<Account[]>`account list ${args}`;
     } else {
-      results = await this.#invokers.lax<Account[]>`account list`;
+      results = await this.#invoker.lax<Account[]>`account list`;
     }
 
     return results ?? [];
@@ -86,7 +93,7 @@ export class AzAccountTools implements ArmpitCredentialProvider {
    * This effectively invokes `az account set`.
    */
   async set(subscriptionIdOrName: SubscriptionIdOrName) {
-    await this.#invokers.lax<Account>`account set --subscription ${subscriptionIdOrName}`;
+    await this.#invoker.lax<Account>`account set --subscription ${subscriptionIdOrName}`;
   }
 
   /**
@@ -203,9 +210,9 @@ export class AzAccountTools implements ArmpitCredentialProvider {
     try {
       let loginAccounts : Account[] | null;
       if (tenantId) {
-        loginAccounts = await this.#invokers.strict<Account[]>`login --tenant ${tenantId}`;
+        loginAccounts = await this.#invoker.strict<Account[]>`login --tenant ${tenantId}`;
       } else {
-        loginAccounts = await this.#invokers.strict<Account[]>`login`;
+        loginAccounts = await this.#invoker.strict<Account[]>`login`;
       }
 
       return loginAccounts;
@@ -248,16 +255,16 @@ export class AzAccountTools implements ArmpitCredentialProvider {
     let results : Location[];
     if (names != null && names.length > 0) {
       const queryFilter = `[? contains([${names.map((n) => `'${n}'`).join(",")}],name)]`;
-      results = await this.#invokers.strict<Location[]>`account list-locations --query ${queryFilter}`;
+      results = await this.#invoker.strict<Location[]>`account list-locations --query ${queryFilter}`;
     }
     else {
-      results = await this.#invokers.strict<Location[]>`account list-locations`;
+      results = await this.#invoker.strict<Location[]>`account list-locations`;
     }
 
     return results ?? [];
   }
 
   getCredential(options?: ArmpitCredentialOptions): ArmpitCredential {
-    return buildCredential(this.#invokers, options);
+    return this.#credentialFactory.getCredential(options);
   }
 }
