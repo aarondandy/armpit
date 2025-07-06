@@ -1,5 +1,5 @@
 import path from "node:path";
-import { az, NameHash } from "armpit";
+import { az, ExistingGroupLocationConflictError, NameHash } from "armpit";
 import { loadMyEnvironment, loadState, saveState } from "./utils/state.js";
 import type {
   Subnet,
@@ -42,7 +42,7 @@ const asgs = {
   factorio: rg<ApplicationSecurityGroup>`network asg create -n asg-factorio`
 }
 
-const nsg = rg.network.upsertNsg(`nsg-videogames-${rg.location}`, {
+const nsg = rg.network.nsgUpsert(`nsg-videogames-${rg.location}`, {
   rules: [
     {
       name: "FactoryMustGrow",
@@ -63,23 +63,23 @@ const nsg = rg.network.upsertNsg(`nsg-videogames-${rg.location}`, {
 });
 nsg.then(nsg => console.log(`[net] nsg ${nsg.name}`));
 
-const vnet = rg<VirtualNetwork>`network vnet create -n vnet-videogames-${rg.location} --address-prefixes 10.64.0.0/16`;
+const vnet = (async () => rg.network.vnetUpsert(`vnet-videogames-${rg.location}`, {
+  addressPrefix: "10.64.0.0/16",
+  subnets: [
+    {
+      name: "default",
+      networkSecurityGroup: await nsg,
+      addressPrefix: "10.64.0.0/24",
+    },
+    {
+      name: "vms",
+      networkSecurityGroup: await nsg,
+      addressPrefix: "10.64.8.0/24",
+    }
+  ]
+}))();
 vnet.then(vnet => console.log(`[net] vnet ${vnet.name} ${vnet.addressSpace?.addressPrefixes?.[0]}`));
-
-const subnets = (async () => {
-  const { id: nsgId } = await nsg;
-  const { name: vnetName, addressSpace } = await vnet;
-  const getPrefix = (octet: number) => addressSpace!.addressPrefixes![0].replace(/\d+\.\d+\/\d+$/, `${octet}.0/24`);
-  const buildSubnet = (name: string, octet: number) => rg<Subnet>`network vnet subnet create
-    -n ${name} --address-prefix ${getPrefix(octet)}
-    --vnet-name ${vnetName} --network-security-group ${nsgId}`;
-  // Subnets must be defined in sequence, not in parallel
-  return {
-    default: await buildSubnet("default", 0),
-    vms: await buildSubnet("vms", 8),
-  };
-})();
-subnets.then(subnets => console.log(`[net] subnets ${Object.keys(subnets)}`));
+const subnetVms = vnet.then(vnet => vnet.subnets!.find(s => s.name === "vms")!);
 
 // -------------------
 // Server and Services
@@ -95,9 +95,10 @@ const pip = rg<PublicIPAddress>`network public-ip create
   --allocation-method static --sku standard`;
 pip.then(pip => console.log(`[vm] public ip ${pip.dnsSettings?.fqdn} (${pip.ipAddress})`));
 
-const nic = rg<NetworkInterface>`network nic create -n nic-${state.serverName}
-  --subnet ${(await subnets).vms.id} --public-ip-address ${(await pip).id}
-  --network-security-group ${(await nsg).id} --asgs ${(await Promise.all([asgs.ssh, asgs.factorio])).map(asg => asg.name)}`;
+const nic = (async () => rg<NetworkInterface>`network nic create -n nic-${state.serverName}
+  --subnet ${(await subnetVms).id} --public-ip-address ${(await pip).name}
+  --network-security-group ${(await nsg).name} --asgs ${(await asgs.ssh).name} ${(await asgs.factorio).name}`
+)();
 nic.then(nic => console.log(`[vm] nic ${nic.ipConfigurations?.[0]?.privateIPAddress}`));
 
 const osDisk = rg<Disk>`disk create -n os-${state.serverName}

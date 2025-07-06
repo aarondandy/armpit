@@ -145,7 +145,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
     return Object.assign(cliResult, {
       strict: invoker.strict,
       lax: invoker.lax,
-      network: new NetworkTools(this.#managementClientFactory, toolContext),
+      network: new NetworkTools(this.#invoker, this.#managementClientFactory, toolContext),
       getCredential: (options?: ArmpitCredentialOptions) => {
         if (subscriptionId) {
           options = { subscription: subscriptionId, ...options };
