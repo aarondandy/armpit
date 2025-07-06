@@ -19,9 +19,9 @@ const queue = await rg<SBQueue>`servicebus queue create --name stuff --namespace
 console.log(`${namespace.name}/queues/${queue.name} created`);
 
 const { userPrincipalName } = await az<any>`ad signed-in-user show`; // TODO: move into az.account or something and/or get types for it
-await Promise.all(["Azure Service Bus Data Receiver", "Azure Service Bus Data Sender"].map(roleName =>
-  az`role assignment create --assignee ${userPrincipalName} --role ${roleName} --scope ${namespace.id}`
-));
+for (const roleName of ["Azure Service Bus Data Receiver", "Azure Service Bus Data Sender"]) {
+  await az`role assignment create --assignee ${userPrincipalName} --role ${roleName} --scope ${namespace.id}`
+}
 
 const connectionString = `Endpoint=sb://${new URL(namespace.serviceBusEndpoint!).host};`;
 console.log(connectionString);

@@ -48,7 +48,7 @@ interface NetworkToolsOptions {
   location?: string | null,
 }
 
-export class NetworkManagementTools {
+export class NetworkTools {
   #options: NetworkToolsOptions;
   #managementClientFactory: ManagementClientFactory;
 
@@ -64,7 +64,7 @@ export class NetworkManagementTools {
       options);
   }
 
-  async upsertNsg(name: string, options?: NsgUpsertOptions): Promise<NetworkSecurityGroup | null> {
+  async upsertNsg(name: string, options?: NsgUpsertOptions): Promise<NetworkSecurityGroup> {
     const groupName = options?.groupName ?? this.#options.groupName;
     if (groupName == null) {
       throw new Error("A group name is required to perform NSG operations.")
@@ -80,7 +80,7 @@ export class NetworkManagementTools {
       return result;
     }) ?? [];
 
-    if (desiredRules.some(r => isAccessType(r.access))) {
+    if (desiredRules.length > 0 && desiredRules.some(r => !isAccessType(r.access))) {
       throw new Error("All NSG rules must specify access explicitly.");
     }
 

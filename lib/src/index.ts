@@ -9,7 +9,7 @@ import { ExistingGroupLocationConflictError, GroupNotEmptyError } from "./errors
 import { execaAzCliInvokerFactory } from "./azCliUtils.js";
 import { ManagementClientFactory } from "./azureSdkUtils.js";
 import { AzAccountTools } from "./accountTools.js";
-import { AzGroupTools } from "./azGroupTools.js";
+import { ResourceGroupTools } from "./resourceGroupTools.js";
 import { AzGlobalInterface } from "./interface.js";
 import { ArmpitCliCredentialFactory } from "./armpitCredential.js";
 
@@ -29,7 +29,7 @@ const az = (function(): AzGlobalInterface {
   const accountTools = new AzAccountTools(invoker, credentialFactory);
   const cliResult = Object.assign(mainFn, {
     account: accountTools,
-    group: new AzGroupTools(invoker, credentialFactory, managementClientFactory, { })
+    group: new ResourceGroupTools(invoker, credentialFactory, managementClientFactory, { })
   });
   let result = Object.assign(cliResult, {
     strict: invoker.strict,

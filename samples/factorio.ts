@@ -42,7 +42,7 @@ const asgs = {
   factorio: rg<ApplicationSecurityGroup>`network asg create -n asg-factorio`
 }
 
-const nsg = (async () => await rg.nsg(`nsg-videogames-${rg.location}`, {
+const nsg = rg.network.upsertNsg(`nsg-videogames-${rg.location}`, {
   rules: [
     {
       name: "FactoryMustGrow",
@@ -60,7 +60,7 @@ const nsg = (async () => await rg.nsg(`nsg-videogames-${rg.location}`, {
       destinationPortRange: "22",
     }
   ]
-}))();
+});
 nsg.then(nsg => console.log(`[net] nsg ${nsg.name}`));
 
 const vnet = rg<VirtualNetwork>`network vnet create -n vnet-videogames-${rg.location} --address-prefixes 10.64.0.0/16`;
