@@ -57,9 +57,11 @@ export function extractSubscriptionFromId(resourceId?: string) {
   return (match && match[1]) ?? null;
 }
 
-export function constructIdUri(
+export function constructId(
   subscriptionId?: SubscriptionId,
-  resourceGroupName?: string
+  resourceGroupName?: string,
+  resourceType?: string,
+  ...names: string[]
 ) {
   let result = "";
 
@@ -69,6 +71,16 @@ export function constructIdUri(
 
   if (resourceGroupName != null) {
     result += `/resourceGroups/${resourceGroupName}`;
+  }
+
+  if (resourceType != null) {
+    result += `/provider/${resourceType}`;
+  }
+
+  if (names && names.length > 0) {
+    for (const name of names) {
+      result += `/${name}`;
+    }
   }
 
   return result;

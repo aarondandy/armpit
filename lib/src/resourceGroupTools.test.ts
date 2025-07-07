@@ -1,15 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { ResourceManagementClient, type ResourceGroup } from "@azure/arm-resources";
-import { constructIdUri } from "./azureUtils.js";
+import { constructId } from "./azureUtils.js";
 import { ManagementClientFactory } from "./azureSdkUtils.js";
 import { ResourceGroupTools } from "./resourceGroupTools.js";
 
 describe("upsert group", () => {
 
   const subscriptionId = "41a80a8e-6547-414a-9d34-ecfbc0f7728d";
-  let resourceClient: ResourceManagementClient;
+  const resourceClient = new ResourceManagementClient(null!, subscriptionId);
   const clientFactory = new ManagementClientFactory(null!);
-  resourceClient = new ResourceManagementClient(null!, subscriptionId);
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -30,7 +29,7 @@ describe("upsert group", () => {
     const tools  = new ResourceGroupTools(fakeInvoker, null!, null!, { });
     laxMock.mockResolvedValueOnce(null); // the get
     strictMock.mockResolvedValueOnce({
-      id: constructIdUri(subscriptionId, "stuff"),
+      id: constructId(subscriptionId, "stuff"),
       name: "stuff",
       location: "centralus",
     } as ResourceGroup); // the create
@@ -48,7 +47,7 @@ describe("upsert group", () => {
   it("can no-op via CLI without set subscription", async () => {
     const tools  = new ResourceGroupTools(fakeInvoker, null!, null!, { });
     laxMock.mockResolvedValueOnce({
-      id: constructIdUri(subscriptionId, "stuff"),
+      id: constructId(subscriptionId, "stuff"),
       name: "stuff",
       location: "centralus",
     } as ResourceGroup); // the get
@@ -66,7 +65,7 @@ describe("upsert group", () => {
   it("can create via SDK when subscription is known", async () => {
     vi.spyOn(resourceClient.resourceGroups, "get").mockResolvedValue(null!);
     vi.spyOn(resourceClient.resourceGroups, "createOrUpdate").mockResolvedValue({
-      id: constructIdUri(subscriptionId, "stuff"),
+      id: constructId(subscriptionId, "stuff"),
       name: "stuff",
       location: "centralus",
     });
@@ -84,15 +83,11 @@ describe("upsert group", () => {
 
   it("can no-op via SDK when subscription is known and group exists", async () => {
     vi.spyOn(resourceClient.resourceGroups, "get").mockResolvedValue({
-      id: constructIdUri(subscriptionId, "stuff"),
+      id: constructId(subscriptionId, "stuff"),
       name: "stuff",
       location: "centralus",
     });
-    vi.spyOn(resourceClient.resourceGroups, "createOrUpdate").mockResolvedValue({
-      id: constructIdUri(subscriptionId, "stuff"),
-      name: "stuff",
-      location: "centralus",
-    });
+    vi.spyOn(resourceClient.resourceGroups, "createOrUpdate");
     const tools = new ResourceGroupTools(fakeInvoker, null!, clientFactory, { });
 
     const result = await tools("stuff", "centralus", subscriptionId);
@@ -107,7 +102,7 @@ describe("upsert group", () => {
 
   it("location conflict throws", async () => {
     vi.spyOn(resourceClient.resourceGroups, "get").mockResolvedValue({
-      id: constructIdUri(subscriptionId, "stuff"),
+      id: constructId(subscriptionId, "stuff"),
       name: "stuff",
       location: "centralus",
     });
