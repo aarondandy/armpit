@@ -30,7 +30,7 @@ const myIp = fetch("https://api.ipify.org/").then(r => r.text());
 // Resource Group
 // --------------
 
-const rg = await az.group(`videogames-${targetLocation}`, targetLocation);
+const rg = await az.group(`videogames-${targetLocation}`, targetLocation, targetEnvironment.subscriptionId);
 const resourceHash = new NameHash(targetEnvironment.subscriptionId).concat(rg.name);
 
 // -------

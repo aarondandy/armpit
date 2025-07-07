@@ -11,7 +11,7 @@ describe("ArmpitCredential getToken", () => {
   });
 
   const strictMock = vi.fn();
-  const fakeInvokers = {
+  const fakeInvoker = {
     strict: strictMock,
     lax: vi.fn().mockImplementation(() => { throw new Error("Not supported"); }),
   };
@@ -22,7 +22,7 @@ describe("ArmpitCredential getToken", () => {
       "tokenType": "Bearer",
       "expires_on": new Date().getTime() / 1000,
     } as AzCliAccessToken)
-    const credential = buildCliCredential(fakeInvokers);
+    const credential = buildCliCredential(fakeInvoker);
 
     const result = await credential.getToken("https://management.azure.com/.default");
 

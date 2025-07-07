@@ -48,13 +48,30 @@ export function isNamedLocationDescriptor<T extends any>(resource?: T): resource
 //   zones: string
 // };
 
-export function extractSubscriptionId(resourceId?: string) {
+export function extractSubscriptionFromId(resourceId?: string) {
   if (!resourceId) {
     return null;
   }
 
   const match = resourceId.match(/\/subscriptions\/([^/]+)\//i);
   return (match && match[1]) ?? null;
+}
+
+export function constructIdUri(
+  subscriptionId?: SubscriptionId,
+  resourceGroupName?: string
+) {
+  let result = "";
+
+  if (subscriptionId != null) {
+    result += `/subscriptions/${subscriptionId}`;
+  }
+
+  if (resourceGroupName != null) {
+    result += `/resourceGroups/${resourceGroupName}`;
+  }
+
+  return result;
 }
 
 export type Scope = string;

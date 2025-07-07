@@ -4,7 +4,7 @@ import { ExistingGroupLocationConflictError, GroupNotEmptyError } from "./errors
 import {
   type ResourceSummary,
   isNamedLocationDescriptor,
-  extractSubscriptionId,
+  extractSubscriptionFromId,
   isSubscriptionId,
   type SubscriptionId,
 } from "./azureUtils.js";
@@ -26,8 +26,8 @@ interface GroupCreateDescriptor {
 }
 
 export interface ResourceGroupTools {
-  (name: string, location: string): Promise<AzGroupInterface>;
-  (descriptor: {name: string, location: string}): Promise<AzGroupInterface>;
+  (name: string, location: string, subscriptionId?: SubscriptionId): Promise<AzGroupInterface>;
+  (descriptor: GroupCreateDescriptor): Promise<AzGroupInterface>;
 }
 
 export class ResourceGroupTools extends CallableClassBase implements ResourceGroupTools {
@@ -126,7 +126,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
     });
 
     if (subscriptionId == null && group.id != null) {
-      subscriptionId = extractSubscriptionId(group.id);
+      subscriptionId = extractSubscriptionFromId(group.id);
     }
 
     let toolContext = {
@@ -173,7 +173,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
   async create(name: string, location: string, subscriptionId?: SubscriptionId | null): Promise<ResourceGroup> {
     const clientSubscriptionId = subscriptionId ?? this.#options.subscriptionId;
     if (clientSubscriptionId == null) {
-      return await this.#invoker.strict<ResourceGroup>`group create --name ${name} -l ${location}`;
+      return await this.#invoker.strict<ResourceGroup>`group create --name ${name} --location ${location}`;
     }
 
     const client = this.getClient(clientSubscriptionId);

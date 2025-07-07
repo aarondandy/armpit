@@ -6,7 +6,7 @@ import type {
   Subnet,
 } from "@azure/arm-network";
 import { NetworkManagementClient } from "@azure/arm-network";
-import { type SubscriptionId, extractSubscriptionId } from "./azureUtils.js";
+import { type SubscriptionId, extractSubscriptionFromId } from "./azureUtils.js";
 import { handleGet, ManagementClientFactory } from "./azureSdkUtils.js";
 import { type AzCliInvoker } from "./azCliUtils.js";
 
@@ -123,7 +123,7 @@ export class NetworkTools {
     let upsertRequired = false;
     let vnet = await this.vnetGet(name, options);
     if (vnet) {
-      subscriptionId ??= extractSubscriptionId(vnet.id);
+      subscriptionId ??= extractSubscriptionFromId(vnet.id);
 
       if (location != null && vnet.location != null && location !== vnet.location) {
         throw new Error(`Specified location ${location} conflicts with existing ${vnet.location}.`);
@@ -251,7 +251,7 @@ export class NetworkTools {
     let upsertRequired = false;
     let nsg = await this.nsgGet(name, options);
     if (nsg) {
-      subscriptionId ??= extractSubscriptionId(nsg.id);
+      subscriptionId ??= extractSubscriptionFromId(nsg.id);
 
       if (location != null && nsg.location != null && location !== nsg.location) {
         throw new Error(`Specified location ${location} conflicts with existing ${nsg.location}.`);
