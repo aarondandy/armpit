@@ -4,11 +4,59 @@ import type {
   SecurityRule,
   VirtualNetwork,
   Subnet,
+  Delegation,
 } from "@azure/arm-network";
 import { NetworkManagementClient } from "@azure/arm-network";
 import { type SubscriptionId, extractSubscriptionFromId } from "./azureUtils.js";
 import { handleGet, ManagementClientFactory } from "./azureSdkUtils.js";
 import { type AzCliInvoker } from "./azCliUtils.js";
+
+function stringsEquals(
+  a: (string | null | undefined)[] | string | null | undefined,
+  b: (string | null | undefined)[] | string | null | undefined,
+  unordered?: boolean
+) {
+  if (a == null) {
+    return b == null;
+  }
+  if (b == null) {
+    return false;
+  }
+
+  if (typeof a !== "string") {
+    if (unordered) {
+      a = [...a];
+      a.sort();
+    }
+
+    a = a.join(",");
+  }
+
+  if (typeof b !== "string") {
+    if (unordered) {
+      b = [...b];
+      b.sort();
+    }
+
+    b = b.join(",");
+  }
+
+  return a === b;
+}
+
+function idsEquals(
+  a: {id?: string}[] | null | undefined,
+  b: {id?: string}[] | null | undefined,
+  unordered?: boolean) {
+  if (a == null) {
+    return b == null;
+  }
+  if (b == null) {
+    return false;
+  }
+
+  return stringsEquals(a.map(e => e.id), b.map(e => e.id), unordered);
+}
 
 interface CommonNetworkOptions {
   groupName?: string | null,
@@ -16,7 +64,125 @@ interface CommonNetworkOptions {
   subscriptionId?: SubscriptionId | null,
 }
 
-interface SubnetDescriptor extends Pick<Subnet, "name" | "addressPrefix" | "networkSecurityGroup" | "delegations"> {
+interface SubnetDescriptor extends Pick<Subnet, "name" | "addressPrefix" | "networkSecurityGroup"> {
+  delegations?: (Delegation | string)[],
+}
+
+function forceDelegationNamining(delegations: Delegation[]) {
+  for (let index = 0; index < delegations.length; index++) {
+    const delegation = delegations[index];
+    if (delegation.name == null || delegation.name === "") {
+      delegation.name = findNextAvailableNumberName(index);
+    }
+  }
+
+  function findNextAvailableNumberName(index: number) {
+    for (; ; index++) {
+      const nameCandidate = index.toString();
+      if (!delegations.some(d => d.name === nameCandidate)) {
+        return nameCandidate;
+      }
+    }
+  }
+}
+
+function delegationEquals(a: Delegation, b: Delegation) {
+  if (a == null) {
+    return b == null;
+  }
+  if (b == null) {
+    return false;
+  }
+
+  return a.name === b.name
+    && a.serviceName === b.serviceName;
+}
+
+function checkDelegationsEquivalent(aItems: Delegation[], bItems: Delegation[]) {
+  if (aItems.length !== bItems.length) {
+    return false;
+  }
+
+  aItems = [...aItems];
+  bItems = [...bItems];
+
+  for (let aIndex = 0; aIndex < aItems.length; ) {
+    const a = aItems[aIndex];
+    let bIndex = bItems.findIndex(r => r.name === a.name);
+    if (!(bIndex >= 0)) {
+      bIndex = bItems.findIndex(r => r.serviceName == a.serviceName);
+    }
+
+    if (bIndex >= 0) {
+      const b = bItems[bIndex];
+      if (!delegationEquals(a, b)) {
+        return false;
+      }
+
+      aItems.splice(aIndex, 1);
+      bItems.splice(bIndex, 1);
+    } else {
+      return false; // an item was unmatched, so early exit should be OK
+    }
+  }
+
+  return aItems.length === 0 && bItems.length === 0;
+}
+
+function vnetSubnetEquals(a: Subnet, b: Subnet) {
+  if (a == null) {
+    return b == null;
+  }
+  if (b == null) {
+    return false;
+  }
+
+  if (
+    a.name != b.name
+  ) {
+    return false;
+  }
+
+  if (!stringsEquals(a.addressPrefix ?? a.addressPrefixes, b.addressPrefix ?? b.addressPrefixes)) {
+    return false;
+  }
+
+  if (a.networkSecurityGroup?.id !== b.networkSecurityGroup?.id) {
+    return false;
+  }
+
+  if (!checkDelegationsEquivalent(a.delegations ?? [], b.delegations ?? [])) {
+    return false;
+  }
+
+  return true;
+}
+
+function checkSubnetsEquivalent(aSubnets: Subnet[], bSubnets: Subnet[]) {
+  if (aSubnets.length !== bSubnets.length) {
+    return false;
+  }
+
+  aSubnets = [...aSubnets];
+  bSubnets = [...bSubnets];
+
+  for (let aIndex = 0; aIndex < aSubnets.length; ) {
+    const a = aSubnets[aIndex];
+    let bIndex = bSubnets.findIndex(r => r.name === a.name);
+    if (bIndex >= 0) {
+      const b = bSubnets[bIndex];
+      if (!vnetSubnetEquals(a, b)) {
+        return false;
+      }
+
+      aSubnets.splice(aIndex, 1);
+      bSubnets.splice(bIndex, 1);
+    } else {
+      return false; // an item was unmatched, so early exit should be OK
+    }
+  }
+
+  return aSubnets.length === 0 && bSubnets.length === 0;
 }
 
 function subnetAddressPrefixIsEqual(subnet: Pick<Subnet, "addressPrefix" | "addressPrefixes">, addressPrefix?: string | null) {
@@ -50,7 +216,7 @@ interface SecurityRuleDescriptor extends Omit<SecurityRule, "etag" | "type" | "p
   protocol: "Tcp" | "Udp" | "Icmp" | "Esp" | "*" | "Ah",
 };
 
-function isNsgAccessType(access: SecurityRuleDescriptor["access"]) {
+function isNsgAccessType(access: unknown): access is SecurityRuleDescriptor["access"] {
   return access === "Allow" || access === "Deny";
 }
 
@@ -74,6 +240,79 @@ function ensureDefaultNsgRuleOptionsSet(rule: SecurityRule) {
   if (!rule.destinationPortRange && !rule.destinationPortRanges) {
     rule.destinationPortRange = "*";
   }
+}
+
+function nsgSecurityRuleEquals(a: SecurityRule, b: SecurityRule) {
+  if (a == null) {
+    return b == null;
+  }
+  if (b == null) {
+    return false;
+  }
+
+  if (
+    a.name != b.name
+    || a.description != b.description
+    || a.protocol !== b.protocol
+    || a.access !== b.access
+    || a.priority !== b.priority
+    || a.direction !== b.direction
+  ) {
+    return false;
+  }
+
+  if (!stringsEquals(a.sourcePortRange ?? a.sourcePortRanges, b.sourcePortRange ?? b.sourcePortRanges)) {
+    return false;
+  }
+
+  if (!stringsEquals(a.destinationPortRange ?? a.destinationPortRanges, b.destinationPortRange ?? b.destinationPortRanges)) {
+    return false;
+  }
+
+  if (!stringsEquals(a.sourceAddressPrefix ?? a.sourceAddressPrefixes, b.sourceAddressPrefix ?? b.sourceAddressPrefixes)) {
+    return false;
+  }
+
+  if (!stringsEquals(a.destinationAddressPrefix ?? a.destinationAddressPrefixes, b.destinationAddressPrefix ?? b.destinationAddressPrefixes)) {
+    return false;
+  }
+
+  if (!idsEquals(a.sourceApplicationSecurityGroups, b.sourceApplicationSecurityGroups, true)) {
+    return false;
+  }
+
+  if (!idsEquals(a.destinationApplicationSecurityGroups, b.destinationApplicationSecurityGroups, true)) {
+    return false;
+  }
+
+  return true;
+}
+
+function checkNsgRulesEquivalent(aRules: SecurityRule[], bRules: SecurityRule[]) {
+  if (aRules.length !== bRules.length) {
+    return false;
+  }
+
+  aRules = [...aRules];
+  bRules = [...bRules];
+
+  for (let aIndex = 0; aIndex < aRules.length; ) {
+    const a = aRules[aIndex];
+    let bIndex = bRules.findIndex(r => r.name === a.name && r.direction === a.direction);
+    if (bIndex >= 0) {
+      const b = bRules[bIndex];
+      if (!nsgSecurityRuleEquals(a, b)) {
+        return false;
+      }
+
+      aRules.splice(aIndex, 1);
+      bRules.splice(bIndex, 1);
+    } else {
+      return false; // an item was unmatched, so early exit should be OK
+    }
+  }
+
+  return aRules.length === 0 && bRules.length === 0;
 }
 
 interface NsgUpsertOptions extends CommonNetworkOptions {
@@ -108,20 +347,32 @@ export class NetworkTools {
       throw new Error("A group name is required to perform network operations.")
     }
 
-    let desiredSubnets = options?.subnets?.map(s => {
-      let result = {
-        ...s,
-      }; // a shallow clone should be safe enough
+    let upsertRequired = false;
+    let vnet = await this.vnetGet(name, options);
 
-      if (result.networkSecurityGroup) {
-        result.networkSecurityGroup = { id: result.networkSecurityGroup.id };
+    let desiredSubnets = options?.subnets?.map(descriptor => {
+      const {
+        delegations,
+        networkSecurityGroup,
+        ...descriptorRest
+      } = descriptor;
+
+      let result = {
+        ...descriptorRest,
+      } as Subnet; // a shallow clone should be safe enough
+
+      if (networkSecurityGroup) {
+        result.networkSecurityGroup = { id: networkSecurityGroup.id };
+      }
+
+      if (delegations) {
+        result.delegations = delegations.map(d => typeof d === "string" ? { serviceName: d } : { ...d });
+        forceDelegationNamining(result.delegations);
       }
 
       return result;
     });
 
-    let upsertRequired = false;
-    let vnet = await this.vnetGet(name, options);
     if (vnet) {
       subscriptionId ??= extractSubscriptionFromId(vnet.id);
 
@@ -179,9 +430,10 @@ export class NetworkTools {
           upsertSubnets.push(...desiredSubnets);
         }
 
-        // TODO: implement a no-op when no modifications are required between nsg.subnets and upsertSubnets
-        upsertRequired = true;
-        vnet.subnets = upsertSubnets;
+        if (!checkSubnetsEquivalent(vnet.subnets ?? [], upsertSubnets)) {
+          upsertRequired = true;
+          vnet.subnets = upsertSubnets;
+        }
       }
 
     } else {
@@ -200,8 +452,8 @@ export class NetworkTools {
         }
       }
 
-      if (options?.subnets) {
-        vnet.subnets = options.subnets;
+      if (desiredSubnets && desiredSubnets.length > 0) {
+        vnet.subnets = desiredSubnets;
       }
 
     }
@@ -241,7 +493,7 @@ export class NetworkTools {
     let desiredRules = options?.rules?.map(d => {
       const result = { ...d }; // a shallow clone should be safe enough
       ensureDefaultNsgRuleOptionsSet(result);
-      return result;
+      return result as SecurityRule;
     });
 
     if (desiredRules && desiredRules.length > 0 && desiredRules.some(r => !isNsgAccessType(r.access))) {
@@ -289,9 +541,10 @@ export class NetworkTools {
           upsertRules.push(...desiredRules);
         }
 
-        // TODO: implement a no-op when no modifications are required between nsg.securityRules and upsertRules
-        upsertRequired = true;
-        nsg.securityRules = upsertRules;
+        if (!checkNsgRulesEquivalent(nsg.securityRules ?? [], upsertRules)) {
+          upsertRequired = true;
+          nsg.securityRules = upsertRules;
+        }
       }
 
     } else {

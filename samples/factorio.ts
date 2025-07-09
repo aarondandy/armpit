@@ -1,9 +1,7 @@
 import path from "node:path";
-import { az, ExistingGroupLocationConflictError, NameHash } from "armpit";
+import { az, NameHash } from "armpit";
 import { loadMyEnvironment, loadState, saveState } from "./utils/state.js";
 import type {
-  Subnet,
-  VirtualNetwork,
   ApplicationSecurityGroup,
   PublicIPAddress,
   NetworkInterface,

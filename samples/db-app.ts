@@ -1,7 +1,7 @@
 import { az, NameHash } from "armpit";
 import { loadMyEnvironment } from "./utils/state.js";
 import mssql from "mssql";
-import type { Subnet, VirtualNetwork, PrivateEndpoint } from "@azure/arm-network";
+import type { PrivateEndpoint } from "@azure/arm-network";
 import type { PrivateZone, VirtualNetworkLink } from "@azure/arm-privatedns";
 import type { ManagedEnvironment, ContainerApp, Resource as ContainerAppResource } from "@azure/arm-appcontainers";
 import type { Server as SqlServer, Database as SqlDatabase } from "@azure/arm-sql";
@@ -24,23 +24,22 @@ const resourceHash = new NameHash(targetEnvironment.subscriptionId, { defaultLen
 // Network
 // -------
 
-const vnet = rg<VirtualNetwork>`network vnet create -n vnet-sample-${rg.location} --address-prefixes 10.10.0.0/16`;
+const vnet = rg.network.vnetUpsert(`vnet-sample-${rg.location}`, {
+  addressPrefix: "10.10.0.0/16",
+  subnets: [
+    {
+      name: "db",
+      addressPrefix: "10.10.20.0/24",
+    },
+    {
+      name: "app",
+      addressPrefix: "10.10.30.0/24",
+      delegations: ["Microsoft.App/environments"],
+    },
+  ]
+});
 vnet.then(vnet => console.log(`[net] vnet ${vnet.name} ${vnet.addressSpace?.addressPrefixes?.[0]}`));
-
-const subnets = (async () => {
-  const { name: vnetName, addressSpace } = await vnet;
-  const getPrefix = (octet: number) => addressSpace!.addressPrefixes![0].replace(/\d+\.\d+\/\d+$/, `${octet}.0/24`);
-  const buildSubnet = (name: string, octet: number, delegations?: string[]) => {
-    const otherArgs = delegations && delegations.length > 0 ? ["--delegations", ...delegations] : []
-    return rg<Subnet>`network vnet subnet create -n ${name} --address-prefix ${getPrefix(octet)} --vnet-name ${vnetName} ${otherArgs}`;
-  }
-  return {
-    default: await buildSubnet("default", 0),
-    database: await buildSubnet("db", 20),
-    app: await buildSubnet("app", 30, ["Microsoft.App/environments"]),
-  };
-})();
-subnets.then(subnets => console.log(`[net] subnets ${Object.keys(subnets)}`));
+const getSubnet = async (name: string) => (await vnet).subnets!.find(s => s.name === name)!;
 
 const dbDnsZone = (async () => {
   const zoneName = "privatelink.database.windows.net";
@@ -113,7 +112,7 @@ runOnDb(async (pool) => {
   const privateEndpoint = await rg<PrivateEndpoint>`network private-endpoint create
     --name ${name} --connection-name ${name} --nic-name ${name}
     --group-id sqlServer --private-connection-resource-id ${(await dbServer).id}
-    --vnet-name ${(await vnet).name} --subnet ${(await subnets).database.name}`;
+    --vnet-name ${(await vnet).name} --subnet ${(await getSubnet("db")).name}`;
   const { name: zoneName, id: zoneId } = await dbDnsZone;
   await rg`network private-endpoint dns-zone-group create
     --name ${name} --endpoint-name ${privateEndpoint.name}
@@ -131,7 +130,7 @@ const containerAppEnv = (async() => {
   const { properties, systemData, ...otherResults } = await rg<ManagedEnvironmentCreateResponse>`containerapp env create
     --name appenv-sample-${resourceHash}-${rg.location}
     --enable-workload-profiles true --logs-destination none
-    --infrastructure-subnet-resource-id ${(await subnets).app.id}`;
+    --infrastructure-subnet-resource-id ${(await getSubnet("app")).id}`;
   const appEnv = { ...otherResults, ...properties } as ManagedEnvironment; // put it all back together
   console.log(`[app] app environment ${appEnv.name} ready via ${appEnv.staticIp}`);
   return appEnv;
