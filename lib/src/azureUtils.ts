@@ -1,6 +1,9 @@
 import { validate as uuidValidate } from 'uuid';
 import type { Resource } from "@azure/arm-resources";
 import type { Subscription } from "@azure/arm-resources-subscriptions";
+import {
+  isStringValueArrayEqual,
+} from "./tsUtils.js";
 
 export type Account = Pick<Subscription, "id" | "managedByTenants" | "state" | "tenantId"> & {
   readonly cloudName?: "AzureCloud" | (string & {}),
@@ -98,4 +101,18 @@ export interface AzCliAccessToken {
   subscription: SubscriptionIdOrName,
   tenant: TenantId,
   tokenType: string,
+}
+
+export function idsEquals(
+  a: {id?: string | null}[] | null | undefined,
+  b: {id?: string | null}[] | null | undefined,
+  sort?: boolean) {
+  if (a == null) {
+    return b == null;
+  }
+  if (b == null) {
+    return false;
+  }
+
+  return isStringValueArrayEqual(a.map(e => e.id), b.map(e => e.id), { sort });
 }

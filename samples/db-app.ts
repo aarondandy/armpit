@@ -1,10 +1,10 @@
 import { az, NameHash } from "armpit";
-import { loadMyEnvironment } from "./utils/state.js";
 import mssql from "mssql";
 import type { PrivateEndpoint } from "@azure/arm-network";
 import type { PrivateZone, VirtualNetworkLink } from "@azure/arm-privatedns";
 import type { ManagedEnvironment, ContainerApp, Resource as ContainerAppResource } from "@azure/arm-appcontainers";
 import type { Server as SqlServer, Database as SqlDatabase } from "@azure/arm-sql";
+import { loadMyEnvironment } from "./utils/state.js";
 
 // --------------------------
 // Environment & Subscription
@@ -34,7 +34,7 @@ const vnet = rg.network.vnetUpsert(`vnet-sample-${rg.location}`, {
     {
       name: "app",
       addressPrefix: "10.10.30.0/24",
-      delegations: ["Microsoft.App/environments"],
+      delegations: "Microsoft.App/environments",
     },
   ]
 });

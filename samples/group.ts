@@ -4,6 +4,7 @@ import { loadMyEnvironment } from "./utils/state.js";
 // An active account and default subscription are needed to get started.
 const targetEnvironment = await loadMyEnvironment("samples");
 const account = await az.account.setOrLogin(targetEnvironment);
+
 console.log(`Logged in to ${account?.name}`);
 
 // This example is all about creating resource groups and doing work within them.
