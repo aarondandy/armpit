@@ -17,8 +17,8 @@ const sa = await rg<StorageAccount>`storage account create
 console.log(`storage ready ${sa.name}`);
 
 // Give ourselves access
-const { userPrincipalName } = await az<any>`ad signed-in-user show`; // TODO: move into az.account or something and/or get types for it
-await az`role assignment create --assignee ${userPrincipalName} --role ${"Storage Account Contributor"} --scope ${sa.id}`
+const user = await az.account.showSignedInUser();
+await az`role assignment create --assignee ${user.userPrincipalName} --role ${"Storage Account Contributor"} --scope ${sa.id}`
 
 // Ensure storage containers exist and upload content to each in parallel
 const sampleContainers = [

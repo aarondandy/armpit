@@ -23,6 +23,7 @@ await az.account.setOrLogin(targetEnvironment);
 const state = await loadState<{serverName?: string}>();
 
 const myIp = fetch("https://api.ipify.org/").then(r => r.text());
+const user = await az.account.showSignedInUser();
 
 // --------------
 // Resource Group
@@ -117,9 +118,8 @@ let vm = (async () => {
 vm.then(vm => console.log(`[vm] server ${vm.name}`));
 
 const vmAuth = (async () => {
-  const { userPrincipalName } = await az<any>`ad signed-in-user show`; // TODO: move into az.account or something and/or get types for it
-  await az`role assignment create --assignee ${userPrincipalName} --role ${"Virtual Machine Administrator Login"} --scope ${(await vm).id}`;
-  console.log(`[vm] admin ${userPrincipalName} added to ${(await vm).name}`);
+  await az`role assignment create --assignee ${user.userPrincipalName} --role ${"Virtual Machine Administrator Login"} --scope ${(await vm).id}`;
+  console.log(`[vm] admin ${user.userPrincipalName} added to ${(await vm).name}`);
 })();
 const vmExtensions = (async () => {
   await rg<VirtualMachineExtension>`vm extension set --vm-name ${(await vm).name} --name AADSSHLoginForLinux --publisher Microsoft.Azure.ActiveDirectory`;

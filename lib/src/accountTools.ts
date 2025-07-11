@@ -9,6 +9,7 @@ import {
   isSubscriptionId,
   type TenantId,
   isTenantId,
+  type SimpleAdUser,
 } from "./azureUtils.js";
 import {
   type ArmpitCredentialProvider,
@@ -55,6 +56,15 @@ export class AzAccountTools implements ArmpitCredentialProvider {
 
       throw invocationError;
     }
+  }
+
+  /**
+   * Shows the current signed in user.
+   * @returns The current user.
+   * This effectively invokes `az ad signed-in-user show`.
+   */
+  async showSignedInUser() {
+    return await this.#invoker.strict<SimpleAdUser>`ad signed-in-user show`;
   }
 
   /**

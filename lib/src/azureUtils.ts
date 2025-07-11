@@ -16,6 +16,12 @@ export type Account = Pick<Subscription, "id" | "managedByTenants" | "state" | "
   }
 }
 
+export interface SimpleAdUser {
+  id: string,
+  userPrincipalName?: string,
+  displayName?: string,
+}
+
 export type ResourceSummary = Pick<Resource, "id" | "name" | "type">;
 
 export type SubscriptionId = string;
