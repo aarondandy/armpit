@@ -346,7 +346,7 @@ export class NetworkTools {
   async nsgUpsert(name: string, options?: NsgUpsertOptions): Promise<NetworkSecurityGroup> {
     let { groupName, subscriptionId, location } = this.#getResourceContext(options);
     if (groupName == null) {
-      throw new Error("A group name is required to perform NSG operations.")
+      throw new Error("A group name is required to perform NSG operations.");
     }
 
     if (options && options.deleteUnknownRules && options.rules == null) {
