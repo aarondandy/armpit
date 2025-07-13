@@ -69,6 +69,15 @@ function extractWrappedResponsePropertyName(response: any): string | null {
   return null;
 }
 
+function simplifyContainerAppResult(result: any) {
+  if (result.properties == null) {
+    return result;
+  }
+
+  const { properties, ...rest } = result;
+  return { ...rest, ...properties };
+}
+
 export interface AzCliInvoker {
   strict: <T>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]) => Promise<T>;
   lax: <T>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]) => Promise<T | null>;
@@ -77,6 +86,7 @@ export interface AzCliInvoker {
 interface CliInvokerFnFactoryOptions {
   laxResultHandling?: boolean,
   unwrapNewResults?: boolean,
+  simplifyContainerAppResults?: boolean,
 }
 
 type InvokerFnFactory = <TOptions extends CliInvokerFnFactoryOptions>(options: TOptions) => <TResult>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]) => Promise<TOptions extends { laxParsing: true } ? (TResult | null) : TResult>;
@@ -186,6 +196,12 @@ export function execaAzCliInvokerFactory<TInvokerOptions extends InvokerOptions>
           }
         }
 
+        if (result.type != null && typeof result.type === "string") {
+          if (fnOptions.simplifyContainerAppResults && /Microsoft.App\//i.test(result.type)) {
+            result = simplifyContainerAppResult(result);
+          }
+        }
+
         return result;
       }
     };
@@ -193,6 +209,7 @@ export function execaAzCliInvokerFactory<TInvokerOptions extends InvokerOptions>
 
   const baseInvokerOptions = {
     unwrapNewResults: true,
+    simplifyContainerAppResults: true,
   };
 
   return {
