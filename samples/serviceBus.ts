@@ -7,7 +7,7 @@ import { ServiceBusClient, type ServiceBusError } from "@azure/service-bus";
 const targetEnvironment = await loadMyEnvironment("samples");
 const targetLocation = targetEnvironment.defaultLocation ?? "centralus";
 await az.account.setOrLogin(targetEnvironment);
-const user = await az.account.showSignedInUser();
+const myUser = await az.account.showSignedInUser();
 
 const rg = await az.group(`samples-${targetLocation}`, targetLocation);
 const resourceHash = new NameHash(targetEnvironment.subscriptionId, { defaultLength: 6 }).concat(rg.name);
@@ -20,7 +20,7 @@ const queue = await rg<SBQueue>`servicebus queue create --name stuff --namespace
 console.log(`${namespace.name}/queues/${queue.name} created`);
 
 for (const roleName of ["Azure Service Bus Data Receiver", "Azure Service Bus Data Sender"]) {
-  await az`role assignment create --assignee ${user.userPrincipalName} --role ${roleName} --scope ${namespace.id}`
+  await az`role assignment create --assignee ${myUser.userPrincipalName} --role ${roleName} --scope ${namespace.id}`
 }
 
 const connectionString = `Endpoint=sb://${new URL(namespace.serviceBusEndpoint!).host};`;

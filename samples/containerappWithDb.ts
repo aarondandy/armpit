@@ -15,7 +15,7 @@ const targetLocation = targetEnvironment.defaultLocation ?? "centralus";
 await az.account.setOrLogin(targetEnvironment);
 
 const myIp = fetch("https://api.ipify.org/").then(r => r.text());
-const user = await az.account.showSignedInUser();
+const myUser = await az.account.showSignedInUser();
 
 const rg = await az.group(`samples-${targetLocation}`, targetLocation);
 const resourceHash = new NameHash(targetEnvironment.subscriptionId, { defaultLength: 6 }).concat(rg.name);
@@ -67,7 +67,7 @@ const dbDnsZone = (async () => {
 
 const dbServer = rg<SqlServer>`sql server create -n db-sample-${resourceHash}-${rg.location}
   --enable-ad-only-auth --external-admin-principal-type User
-  --external-admin-name ${user.userPrincipalName} --external-admin-sid ${user.id}`;
+  --external-admin-name ${myUser.userPrincipalName} --external-admin-sid ${myUser.id}`;
 dbServer.then(s => console.log(`[db] server created ${s.fullyQualifiedDomainName}`));
 
 const db = (async () => {
