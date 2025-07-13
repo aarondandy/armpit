@@ -86,6 +86,7 @@ export function execaAzCliInvokerFactory<TInvokerOptions extends InvokerOptions>
     ...options.env,
     AZURE_CORE_OUTPUT: "json", // request json by default
     AZURE_CORE_ONLY_SHOW_ERRORS: "true", // the tools aren't always consistent so this is just simpler
+    AZURE_CORE_DISABLE_PROGRESS_BAR: "true", // avoid progress bars and spinners
     AZURE_CORE_NO_COLOR: "true", // hopefully this reduces some noise in stderr and stdout
     AZURE_CORE_LOGIN_EXPERIENCE_V2: "off", // these tools have their own way to select accounts
   };
@@ -100,6 +101,9 @@ export function execaAzCliInvokerFactory<TInvokerOptions extends InvokerOptions>
 
   const execaInvoker = Execa$({
     env,
+    stdin: "inherit",
+    stdout: "pipe",
+    stderr: "pipe",
   });
 
   const invokerFnBuilder: InvokerFnFactory = <TFnOptions extends CliInvokerFnFactoryOptions>(fnOptions: TFnOptions) => {
