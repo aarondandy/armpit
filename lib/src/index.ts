@@ -8,7 +8,7 @@ import { NameHash } from "./nameHash.js";
 import { ExistingGroupLocationConflictError, GroupNotEmptyError } from "./errors.js";
 import { execaAzCliInvokerFactory } from "./azCliUtils.js";
 import { ManagementClientFactory } from "./azureSdkUtils.js";
-import { AzAccountTools } from "./accountTools.js";
+import { AccountTools } from "./accountTools.js";
 import { ResourceGroupTools } from "./resourceGroupTools.js";
 import { AzGlobalInterface } from "./interface.js";
 import { ArmpitCliCredentialFactory } from "./armpitCredential.js";
@@ -19,17 +19,30 @@ export type {
 };
 
 const az = (function(): AzGlobalInterface {
+  const abortController = new AbortController();
+  process.on("SIGINT", () => abortController.abort("SIGINT received"));
+  process.on("SIGTERM", () => abortController.abort("SIGTERM received"));
+
   const invoker = execaAzCliInvokerFactory({
     forceAzCommandPrefix: true,
-    laxParsing: false,
+    abortSignal: abortController.signal,
   });
   const mainFn = invoker.strict;
   const credentialFactory = new ArmpitCliCredentialFactory(invoker);
   const managementClientFactory = new ManagementClientFactory(credentialFactory);
-  const accountTools = new AzAccountTools(invoker, credentialFactory);
+  const sharedDependencies = {
+    invoker,
+    credentialFactory,
+    managementClientFactory,
+  };
+  const accountTools = new AccountTools(sharedDependencies, {
+    abortSignal: abortController.signal,
+  });
   const cliResult = Object.assign(mainFn, {
     account: accountTools,
-    group: new ResourceGroupTools(invoker, credentialFactory, managementClientFactory, { })
+    group: new ResourceGroupTools(sharedDependencies, {
+      abortSignal: abortController.signal
+    })
   });
   let result = Object.assign(cliResult, {
     strict: invoker.strict,

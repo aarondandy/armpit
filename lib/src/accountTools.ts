@@ -18,7 +18,16 @@ import {
   ArmpitCliCredentialFactory
 } from "./armpitCredential.js";
 
-interface AzAccountListOptions {
+interface AccountToolsOptions {
+  abortSignal?: AbortSignal,
+}
+
+interface AccountToolsDependencies {
+  invoker: AzCliInvoker;
+  credentialFactory: ArmpitCliCredentialFactory;
+}
+
+interface AccountListOptions {
   all?: boolean,
   refresh?: boolean,
 }
@@ -28,15 +37,17 @@ interface AzAccountListOptions {
  * @remarks
  * Accounts roughly approximate a subscription accessed by a user via the Azure CLI.
  */
-export class AzAccountTools implements ArmpitCredentialProvider {
+export class AccountTools implements ArmpitCredentialProvider {
 
   /** Invokers associated with a global Azure CLI shell */
   #invoker: AzCliInvoker;
   #credentialFactory: ArmpitCliCredentialFactory;
+  #options: AccountToolsOptions;
 
-  constructor(invoker: AzCliInvoker, credentialFactory?: ArmpitCliCredentialFactory) {
-    this.#invoker = invoker;
-    this.#credentialFactory = credentialFactory ?? new ArmpitCliCredentialFactory(invoker);
+  constructor(dependencies: AccountToolsDependencies, options: AccountToolsOptions) {
+    this.#invoker = dependencies.invoker;
+    this.#credentialFactory = dependencies.credentialFactory ?? new ArmpitCliCredentialFactory(this.#invoker);
+    this.#options = options;
   }
 
   /**
@@ -46,6 +57,7 @@ export class AzAccountTools implements ArmpitCredentialProvider {
    * This effectively invokes `az account show`.
    */
   async show() {
+    this.#options.abortSignal?.throwIfAborted();
     try {
       return await this.#invoker.lax<Account>`account show`;
     } catch (invocationError) {
@@ -64,6 +76,7 @@ export class AzAccountTools implements ArmpitCredentialProvider {
    * This effectively invokes `az ad signed-in-user show`.
    */
   async showSignedInUser() {
+    this.#options.abortSignal?.throwIfAborted();
     return await this.#invoker.strict<SimpleAdUser>`ad signed-in-user show`;
   }
 
@@ -74,7 +87,7 @@ export class AzAccountTools implements ArmpitCredentialProvider {
    * @remarks
    * This effectively invokes `az account list`.
    */
-  async list(options?: AzAccountListOptions) : Promise<Account[]> {
+  async list(options?: AccountListOptions) : Promise<Account[]> {
     let args: string[] | undefined;
     if (options) {
       args = [];
@@ -85,6 +98,8 @@ export class AzAccountTools implements ArmpitCredentialProvider {
         args.push("--refresh");
       }
     }
+
+    this.#options.abortSignal?.throwIfAborted();
 
     let results: Account[] | null;
     if (args && args.length > 0) {
@@ -103,6 +118,7 @@ export class AzAccountTools implements ArmpitCredentialProvider {
    * This effectively invokes `az account set`.
    */
   async set(subscriptionIdOrName: SubscriptionIdOrName) {
+    this.#options.abortSignal?.throwIfAborted();
     await this.#invoker.lax<Account>`account set --subscription ${subscriptionIdOrName}`;
   }
 
@@ -217,6 +233,7 @@ export class AzAccountTools implements ArmpitCredentialProvider {
    * @returns An account if login is successful.
    */
   async login(tenantId?: string) : Promise<Account[] | null> {
+    this.#options.abortSignal?.throwIfAborted();
     try {
       let loginAccounts : Account[] | null;
       if (tenantId) {
@@ -262,6 +279,7 @@ export class AzAccountTools implements ArmpitCredentialProvider {
    * @returns A lot of Azure locations.
    */
   async listLocations(names?: string[]) {
+    this.#options.abortSignal?.throwIfAborted();
     let results : Location[];
     if (names != null && names.length > 0) {
       const queryFilter = `[? contains([${names.map((n) => `'${n}'`).join(",")}],name)]`;

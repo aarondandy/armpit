@@ -27,6 +27,7 @@ interface InvokerOptions {
   defaultLocation?: string,
   defaultResourceGroup?: string,
   forceAzCommandPrefix?: boolean,
+  abortSignal?: AbortSignal,
 }
 
 function ensureAzPrefix(templates: TemplateStringsArray) {
@@ -114,6 +115,7 @@ export function execaAzCliInvokerFactory<TInvokerOptions extends InvokerOptions>
     stdin: "inherit",
     stdout: "pipe",
     stderr: "pipe",
+    cancelSignal: options.abortSignal,
   });
 
   const invokerFnBuilder: InvokerFnFactory = <TFnOptions extends CliInvokerFnFactoryOptions>(fnOptions: TFnOptions) => {

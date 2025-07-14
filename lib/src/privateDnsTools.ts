@@ -9,9 +9,18 @@ import {
 import { handleGet, ManagementClientFactory } from "./azureSdkUtils.js";
 import { type AzCliInvoker } from "./azCliUtils.js";
 
+interface PrivateDnsToolsDependencies {
+  invoker: AzCliInvoker,
+  managementClientFactory: ManagementClientFactory,
+}
+
 interface CommonPrivateDnsOptions {
   groupName?: string | null,
   subscriptionId?: SubscriptionId | null,
+  abortSignal?: AbortSignal,
+}
+
+interface PrivateDnsToolsConstructorOptions extends CommonPrivateDnsOptions {
 }
 
 interface PrivateZoneUpsertOptions extends CommonPrivateDnsOptions {
@@ -20,20 +29,22 @@ interface PrivateZoneUpsertOptions extends CommonPrivateDnsOptions {
 export class PrivateDnsTools {
   #invoker: AzCliInvoker;
   #managementClientFactory: ManagementClientFactory;
-  #options: CommonPrivateDnsOptions;
+  #options: PrivateDnsToolsConstructorOptions;
 
-  constructor(invoker: AzCliInvoker, managementClientFactory: ManagementClientFactory, options: CommonPrivateDnsOptions) {
-    this.#invoker = invoker;
-    this.#managementClientFactory = managementClientFactory;
+  constructor(dependencies: PrivateDnsToolsDependencies, options: PrivateDnsToolsConstructorOptions) {
+    this.#invoker = dependencies.invoker;
+    this.#managementClientFactory = dependencies.managementClientFactory;
     this.#options = options;
   }
 
   async zoneGet(name: string, options?: CommonPrivateDnsOptions): Promise<PrivateZone | null> {
-    const { groupName, subscriptionId } = this.#getResourceContext(options);
+    const { groupName, subscriptionId, abortSignal } = this.#getResourceContext(options);
     if (subscriptionId != null && groupName != null) {
       const client = this.getClient(subscriptionId);
-      return await handleGet(client.privateZones.get(groupName, name));
+      return await handleGet(client.privateZones.get(groupName, name, {abortSignal}));
     }
+
+    abortSignal?.throwIfAborted();
 
     if (groupName) {
       return this.#invoker.lax<PrivateZone>`network private-dns zone show --name ${name} --group-name ${groupName}`;
@@ -43,7 +54,7 @@ export class PrivateDnsTools {
   }
 
   async zoneUpsert(name: string, options?: PrivateZoneUpsertOptions): Promise<PrivateZone> {
-    let { groupName, subscriptionId } = this.#getResourceContext(options);
+    let { groupName, subscriptionId, abortSignal } = this.#getResourceContext(options);
     if (groupName == null) {
       throw new Error("A group name is required to perform DNS zone operations");
     }
@@ -54,9 +65,8 @@ export class PrivateDnsTools {
       zone = await client.privateZones.beginCreateOrUpdateAndWait(
         groupName,
         name,
-        {
-          location: "Global"
-        }
+        {location: "Global"},
+        {abortSignal}
       );
     }
 
@@ -74,6 +84,7 @@ export class PrivateDnsTools {
     return {
       groupName: options?.groupName ?? this.#options.groupName ?? null,
       subscriptionId: options?.subscriptionId ?? this.#options.subscriptionId ?? null,
+      abortSignal: options?.abortSignal ?? this.#options.abortSignal,
     }
   }
 }

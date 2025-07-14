@@ -14,9 +14,16 @@ import type { ArmpitCredentialOptions, ArmpitCliCredentialFactory } from "./armp
 import { AzGroupInterface } from "./interface.js";
 import { NetworkTools } from "./networkTools.js";
 
-export interface GroupToolsContext {
-  subscriptionId?: SubscriptionId,
+interface GroupToolsConstructorOptions {
   location?: string,
+  subscriptionId?: SubscriptionId,
+  abortSignal?: AbortSignal,
+}
+
+interface GroupToolsDependencies {
+  invoker: AzCliInvoker,
+  credentialFactory: ArmpitCliCredentialFactory,
+  managementClientFactory: ManagementClientFactory,
 }
 
 interface GroupCreateDescriptor {
@@ -31,16 +38,14 @@ export interface ResourceGroupTools {
 }
 
 export class ResourceGroupTools extends CallableClassBase implements ResourceGroupTools {
+  #dependencies: GroupToolsDependencies;
   #invoker: AzCliInvoker;
-  #credentialFactory: ArmpitCliCredentialFactory;
-  #managementClientFactory: ManagementClientFactory;
-  #options: GroupToolsContext;
+  #options: GroupToolsConstructorOptions;
 
-  constructor(invoker: AzCliInvoker, credentialFactory: ArmpitCliCredentialFactory, managementClientFactory: ManagementClientFactory, options: GroupToolsContext) {
+  constructor(dependencies: GroupToolsDependencies, options: GroupToolsConstructorOptions) {
     super();
-    this.#invoker = invoker;
-    this.#credentialFactory = credentialFactory;
-    this.#managementClientFactory = managementClientFactory;
+    this.#dependencies = dependencies;
+    this.#invoker = dependencies.invoker;
     this.#options = options;
   }
 
@@ -123,6 +128,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
       laxParsing: false,
       defaultLocation: group.location ?? location,
       defaultResourceGroup: group.name ?? groupName,
+      abortSignal: this.#options.abortSignal,
     });
 
     if (subscriptionId == null && group.id != null) {
@@ -145,13 +151,13 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
     return Object.assign(cliResult, {
       strict: invoker.strict,
       lax: invoker.lax,
-      network: new NetworkTools(this.#invoker, this.#managementClientFactory, toolContext),
+      network: new NetworkTools(this.#dependencies, toolContext),
       getCredential: (options?: ArmpitCredentialOptions) => {
         if (subscriptionId) {
           options = { subscription: subscriptionId, ...options };
         }
 
-        return this.#credentialFactory.getCredential(options);
+        return this.#dependencies.credentialFactory.getCredential(options);
       },
     });
   }
@@ -163,7 +169,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
     }
 
     const client = this.getClient(clientSubscriptionId);
-    return await handleGet(client.resourceGroups.get(name));
+    return await handleGet(client.resourceGroups.get(name, {abortSignal: this.#options.abortSignal}));
   }
 
   async exists(name: string): Promise<boolean> {
@@ -177,7 +183,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
     }
 
     const client = this.getClient(clientSubscriptionId);
-    return await client.resourceGroups.createOrUpdate(name, {location});
+    return await client.resourceGroups.createOrUpdate(name, {location}, {abortSignal: this.#options.abortSignal});
   }
 
   async delete(name: string) {
@@ -219,7 +225,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
       clientSubscriptionId = this.#options.subscriptionId;
     }
 
-    return this.#managementClientFactory.get(ResourceManagementClient, clientSubscriptionId);
+    return this.#dependencies.managementClientFactory.get(ResourceManagementClient, clientSubscriptionId);
   }
 
   #getRequiredDefaultLocation(): string {

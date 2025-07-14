@@ -1,5 +1,5 @@
 import { ArmpitCredentialProvider } from "./armpitCredential.js";
-import { AzAccountTools } from "./accountTools.js";
+import { AccountTools } from "./accountTools.js";
 import { ResourceGroupTools } from "./resourceGroupTools.js";
 import { NetworkTools } from "./networkTools.js";
 import { AzTemplateExpression } from "./azCliUtils.js";
@@ -13,7 +13,7 @@ export interface AzCliInvokable {
 
 export interface AzGlobal extends ArmpitCredentialProvider {
   readonly group: ResourceGroupTools;
-  readonly account: AzAccountTools;
+  readonly account: AccountTools;
 }
 
 export interface AzGlobalInterface extends AzGlobal, AzCliInvokable {

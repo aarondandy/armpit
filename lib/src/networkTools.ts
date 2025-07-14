@@ -19,10 +19,14 @@ import {
 import { handleGet, ManagementClientFactory } from "./azureSdkUtils.js";
 import { type AzCliInvoker } from "./azCliUtils.js";
 
-interface CommonNetworkOptions {
+interface CommonNetworkToolsOptions {
   groupName?: string | null,
   location?: string | null,
   subscriptionId?: SubscriptionId | null,
+  abortSignal?: AbortSignal,
+}
+
+interface NetworkToolsConstructorOptions extends CommonNetworkToolsOptions {
 }
 
 type DelegationDescriptor = Pick<Delegation, "name" | "serviceName">;
@@ -88,7 +92,7 @@ function isSubnetEqual(a: Subnet, b: Subnet) {
   return true;
 }
 
-interface VnetUpsertOptions extends CommonNetworkOptions {
+interface VnetUpsertOptions extends CommonNetworkToolsOptions {
   addressPrefix?: string,
   subnets?: SubnetDescriptor[],
   deleteUnknownSubnets?: boolean,
@@ -174,7 +178,7 @@ function isSecurityRuleEqual(a: SecurityRule, b: SecurityRule) {
   return true;
 }
 
-interface NsgUpsertOptions extends CommonNetworkOptions {
+interface NsgUpsertOptions extends CommonNetworkToolsOptions {
   rules?: SecurityRuleDescriptor[],
   deleteUnknownRules?: boolean,
 }
@@ -182,26 +186,33 @@ interface NsgUpsertOptions extends CommonNetworkOptions {
 export class NetworkTools {
   #invoker: AzCliInvoker;
   #managementClientFactory: ManagementClientFactory;
-  #options: CommonNetworkOptions;
+  #options: NetworkToolsConstructorOptions;
 
-  constructor(invoker: AzCliInvoker, managementClientFactory: ManagementClientFactory, options: CommonNetworkOptions) {
-    this.#invoker = invoker;
-    this.#managementClientFactory = managementClientFactory;
+  constructor(
+    dependencies: {
+      invoker: AzCliInvoker;
+      managementClientFactory: ManagementClientFactory
+    },
+    options: NetworkToolsConstructorOptions
+  ) {
+    this.#invoker = dependencies.invoker;
+    this.#managementClientFactory = dependencies.managementClientFactory;
     this.#options = options;
   }
 
-  async vnetGet(name: string, options?: CommonNetworkOptions): Promise<VirtualNetwork | null> {
-    const { groupName, subscriptionId } = this.#getResourceContext(options);
+  async vnetGet(name: string, options?: CommonNetworkToolsOptions): Promise<VirtualNetwork | null> {
+    const { groupName, subscriptionId, abortSignal } = this.#getResourceContext(options);
     if (subscriptionId != null && groupName != null) {
       const client = this.getClient(subscriptionId);
-      return await handleGet(client.virtualNetworks.get(groupName, name));
+      return await handleGet(client.virtualNetworks.get(groupName, name, {abortSignal}));
     }
 
+    abortSignal?.throwIfAborted();
     return this.#invoker.lax<NetworkSecurityGroup>`network nsg show --name ${name}`;
   }
 
   async vnetUpsert(name: string, options?: VnetUpsertOptions): Promise<VirtualNetwork> {
-    let { groupName, subscriptionId, location } = this.#getResourceContext(options);
+    let { groupName, subscriptionId, location, abortSignal } = this.#getResourceContext(options);
     if (groupName == null) {
       throw new Error("A group name is required to perform network operations.")
     }
@@ -326,25 +337,27 @@ export class NetworkTools {
       vnet = await client.virtualNetworks.beginCreateOrUpdateAndWait(
         groupName,
         name,
-        vnet
+        vnet,
+        {abortSignal}
       );
     }
 
     return vnet;
   }
 
-  async nsgGet(name: string, options?: CommonNetworkOptions): Promise<NetworkSecurityGroup | null> {
-    const { groupName, subscriptionId } = this.#getResourceContext(options);
+  async nsgGet(name: string, options?: CommonNetworkToolsOptions): Promise<NetworkSecurityGroup | null> {
+    const { groupName, subscriptionId, abortSignal } = this.#getResourceContext(options);
     if (subscriptionId != null && groupName != null) {
       const client = this.getClient(subscriptionId);
-      return await handleGet(client.networkSecurityGroups.get(groupName, name));
+      return await handleGet(client.networkSecurityGroups.get(groupName, name, {abortSignal}));
     }
 
+    abortSignal?.throwIfAborted();
     return this.#invoker.lax<NetworkSecurityGroup>`network nsg show --name ${name}`;
   }
 
   async nsgUpsert(name: string, options?: NsgUpsertOptions): Promise<NetworkSecurityGroup> {
-    let { groupName, subscriptionId, location } = this.#getResourceContext(options);
+    let { groupName, subscriptionId, location, abortSignal } = this.#getResourceContext(options);
     if (groupName == null) {
       throw new Error("A group name is required to perform NSG operations.");
     }
@@ -431,7 +444,8 @@ export class NetworkTools {
       nsg = await client.networkSecurityGroups.beginCreateOrUpdateAndWait(
         groupName,
         name,
-        nsg
+        nsg,
+        {abortSignal}
       );
     }
 
@@ -445,11 +459,12 @@ export class NetworkTools {
       options);
   }
 
-  #getResourceContext(options?: CommonNetworkOptions | null) {
+  #getResourceContext(options?: CommonNetworkToolsOptions | null) {
     return {
       groupName: options?.groupName ?? this.#options.groupName ?? null,
       subscriptionId: options?.subscriptionId ?? this.#options.subscriptionId ?? null,
       location: options?.location ?? this.#options.location ?? null,
+      abortSignal: options?.abortSignal ?? this.#options.abortSignal,
     }
   }
 }

@@ -9,7 +9,7 @@ describe("upsert vnet", () => {
   const groupName = "stuff";
   const location = "centralus";
   const vnetName = "vnet";
-  const toolContext = { groupName, location, subscriptionId };
+  const toolOptions = { groupName, location, subscriptionId };
   const networkClient = new NetworkManagementClient(null!, subscriptionId);
   const clientFactory = new ManagementClientFactory(null!);
 
@@ -28,8 +28,13 @@ describe("upsert vnet", () => {
     lax: laxMock,
   };
 
+  const sharedDependencies = {
+    invoker: fakeInvoker,
+    managementClientFactory: clientFactory,
+  }
+
   it("can create when not found", async () => {
-    const tools = new NetworkTools(fakeInvoker, clientFactory, toolContext);
+    const tools = new NetworkTools(sharedDependencies, toolOptions);
     vi.spyOn(networkClient.virtualNetworks, "get").mockResolvedValue(null!);
     vi.spyOn(networkClient.virtualNetworks, "beginCreateOrUpdateAndWait").mockImplementationOnce((groupName, name, vnet) => Promise.resolve({
       ...vnet,
@@ -53,12 +58,13 @@ describe("upsert vnet", () => {
         addressSpace: {
           addressPrefixes: ["10.11.0.0/16"],
         }
-      }
+      },
+      expect.anything()
     );
   });
 
   it("can update existing", async () => {
-    const tools = new NetworkTools(fakeInvoker, clientFactory, toolContext);
+    const tools = new NetworkTools(sharedDependencies, toolOptions);
     vi.spyOn(networkClient.virtualNetworks, "get").mockResolvedValue({
       name: vnetName,
         location,
@@ -89,12 +95,13 @@ describe("upsert vnet", () => {
         addressSpace: {
           addressPrefixes: ["10.10.0.0/16"],
         }
-      }
+      },
+      expect.anything()
     );
   });
 
   it("can create with subnet", async () => {
-    const tools = new NetworkTools(fakeInvoker, clientFactory, toolContext);
+    const tools = new NetworkTools(sharedDependencies, toolOptions);
     vi.spyOn(networkClient.virtualNetworks, "get").mockResolvedValue(null!);
     vi.spyOn(networkClient.virtualNetworks, "beginCreateOrUpdateAndWait").mockImplementationOnce((groupName, name, vnet) => Promise.resolve({
       ...vnet,
@@ -130,12 +137,13 @@ describe("upsert vnet", () => {
             addressPrefix: "10.10.10.0/24",
           }
         ]
-      }
+      },
+      expect.anything()
     );
   });
 
   it("can update adding new subnet", async () => {
-    const tools = new NetworkTools(fakeInvoker, clientFactory, toolContext);
+    const tools = new NetworkTools(sharedDependencies, toolOptions);
     vi.spyOn(networkClient.virtualNetworks, "get").mockResolvedValue({
       name: vnetName,
       location,
@@ -178,12 +186,13 @@ describe("upsert vnet", () => {
             addressPrefix: "10.10.10.0/24",
           }
         ]
-      }
+      },
+      expect.anything()
     );
   });
 
   it("can add new subnet preserving existing", async () => {
-    const tools = new NetworkTools(fakeInvoker, clientFactory, toolContext);
+    const tools = new NetworkTools(sharedDependencies, toolOptions);
     vi.spyOn(networkClient.virtualNetworks, "get").mockResolvedValue({
       name: vnetName,
       location,
@@ -235,12 +244,13 @@ describe("upsert vnet", () => {
             addressPrefix: "10.10.20.0/24",
           }
         ]
-      }
+      },
+      expect.anything()
     );
   });
 
   it("can add new subnet replacing existing", async () => {
-    const tools = new NetworkTools(fakeInvoker, clientFactory, toolContext);
+    const tools = new NetworkTools(sharedDependencies, toolOptions);
     vi.spyOn(networkClient.virtualNetworks, "get").mockResolvedValue({
       name: vnetName,
       location,
@@ -289,7 +299,8 @@ describe("upsert vnet", () => {
             addressPrefix: "10.10.20.0/24",
           }
         ]
-      }
+      },
+      expect.anything()
     );
   });
 
@@ -300,7 +311,7 @@ describe("upsert nsg", () => {
   const groupName = "stuff";
   const location = "centralus";
   const nsgName = "nsg";
-  const toolContext = { groupName, location, subscriptionId };
+  const toolOptions = { groupName, location, subscriptionId };
   const networkClient = new NetworkManagementClient(null!, subscriptionId);
   const clientFactory = new ManagementClientFactory(null!);
 
@@ -319,8 +330,13 @@ describe("upsert nsg", () => {
     lax: laxMock,
   };
 
+  const sharedDependencies = {
+    invoker: fakeInvoker,
+    managementClientFactory: clientFactory,
+  }
+
   it("can create via SDK", async () => {
-    const tools = new NetworkTools(fakeInvoker, clientFactory, toolContext);
+    const tools = new NetworkTools(sharedDependencies, toolOptions);
     vi.spyOn(networkClient.networkSecurityGroups, "get").mockResolvedValue(null!);
     vi.spyOn(networkClient.networkSecurityGroups, "beginCreateOrUpdateAndWait").mockImplementationOnce((groupName, name, nsg) => Promise.resolve({
       ...nsg,
@@ -339,12 +355,13 @@ describe("upsert nsg", () => {
       {
         name: nsgName,
         location,
-      }
+      },
+      expect.anything()
     );
   });
 
   it("can no-op without rules via SDK", async () => {
-    const tools = new NetworkTools(fakeInvoker, clientFactory, toolContext);
+    const tools = new NetworkTools(sharedDependencies, toolOptions);
     vi.spyOn(networkClient.networkSecurityGroups, "get").mockResolvedValue({
       id: constructId(subscriptionId, groupName, "Microsoft.Network/networkSecurityGroups", nsgName),
       name: nsgName,
@@ -358,12 +375,15 @@ describe("upsert nsg", () => {
     expect(result).toBeTruthy();
     expect(result.name).toBe(nsgName);
     expect(result.location).toBe(location);
-    expect(networkClient.networkSecurityGroups.get).toHaveBeenCalledExactlyOnceWith(groupName, nsgName);
+    expect(networkClient.networkSecurityGroups.get).toHaveBeenCalledExactlyOnceWith(
+      groupName,
+      nsgName,
+      expect.anything());
     expect(networkClient.networkSecurityGroups.beginCreateOrUpdateAndWait).not.toBeCalled();
   });
 
   it("can create with rule via SDK", async () => {
-    const tools = new NetworkTools(fakeInvoker, clientFactory, toolContext);
+    const tools = new NetworkTools(sharedDependencies, toolOptions);
     vi.spyOn(networkClient.networkSecurityGroups, "get").mockResolvedValue(null!);
     vi.spyOn(networkClient.networkSecurityGroups, "beginCreateOrUpdateAndWait").mockImplementationOnce((groupName, name, nsg) => Promise.resolve({
       ...nsg,
@@ -400,12 +420,13 @@ describe("upsert nsg", () => {
             destinationAddressPrefix: "*", destinationPortRange: "22",
           }
         ]
-      }
+      },
+      expect.anything()
     );
   });
 
   it("can no-op with no rule changes via SDK", async () => {
-    const tools = new NetworkTools(fakeInvoker, clientFactory, toolContext);
+    const tools = new NetworkTools(sharedDependencies, toolOptions);
     vi.spyOn(networkClient.networkSecurityGroups, "get").mockResolvedValueOnce({
       id: constructId(subscriptionId, groupName, "Microsoft.Network/networkSecurityGroups", nsgName),
       name: nsgName,
@@ -442,7 +463,7 @@ describe("upsert nsg", () => {
   });
 
   it("can upsert new rule while preserving existing rule via SDK", async () => {
-    const tools = new NetworkTools(fakeInvoker, clientFactory, toolContext);
+    const tools = new NetworkTools(sharedDependencies, toolOptions);
     vi.spyOn(networkClient.networkSecurityGroups, "get").mockResolvedValueOnce({
       id: constructId(subscriptionId, groupName, "Microsoft.Network/networkSecurityGroups", nsgName),
       name: nsgName,
@@ -501,12 +522,13 @@ describe("upsert nsg", () => {
             destinationAddressPrefix: "*", destinationPortRange: "22",
           }
         ]
-      }
+      },
+      expect.anything()
     );
   });
 
   it("can overwrite new rule and remove existing and unspecified rule via SDK", async () => {
-    const tools = new NetworkTools(fakeInvoker, clientFactory, toolContext);
+    const tools = new NetworkTools(sharedDependencies, toolOptions);
     vi.spyOn(networkClient.networkSecurityGroups, "get").mockResolvedValueOnce({
       id: constructId(subscriptionId, groupName, "Microsoft.Network/networkSecurityGroups", nsgName),
       name: nsgName,
@@ -560,7 +582,8 @@ describe("upsert nsg", () => {
             destinationAddressPrefix: "*", destinationPortRange: "22",
           }
         ]
-      }
+      },
+      expect.anything()
     );
   });
 
