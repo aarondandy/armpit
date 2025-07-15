@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { NetworkManagementClient } from "@azure/arm-network";
+import { PrivateDnsManagementClient } from "@azure/arm-privatedns";
 import { constructId } from "./azureUtils.js";
 import { ManagementClientFactory } from "./azureSdkUtils.js";
 import { NetworkTools } from "./networkTools.js";
@@ -585,6 +586,82 @@ describe("upsert nsg", () => {
       },
       expect.anything()
     );
+  });
+
+});
+
+describe("upsert private zone", () => {
+  const subscriptionId = "41a80a8e-6547-414a-9d34-ecfbc0f7728d";
+  const groupName = "stuff";
+  const zoneName = "zone";
+  const toolOptions = { groupName, subscriptionId };
+  const privateDnsClient = new PrivateDnsManagementClient(null!, subscriptionId);
+  const clientFactory = new ManagementClientFactory(null!);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(clientFactory, "get").mockImplementation(() => privateDnsClient);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const strictMock = vi.fn();
+  const laxMock = vi.fn();
+  const fakeInvoker = {
+    strict: strictMock,
+    lax: laxMock,
+  };
+
+  const sharedDependencies = {
+    invoker: fakeInvoker,
+    managementClientFactory: clientFactory,
+  }
+
+  it("can create via SDK", async () => {
+    const tools = new NetworkTools(sharedDependencies, toolOptions);
+    vi.spyOn(privateDnsClient.privateZones, "get").mockResolvedValue(null!);
+    vi.spyOn(privateDnsClient.privateZones, "beginCreateOrUpdateAndWait").mockImplementationOnce((groupName, name, zone) => Promise.resolve({
+      ...zone,
+      id: constructId(subscriptionId, groupName, "Microsoft.Network/privateDnsZones", name),
+      location: "Global",
+      name,
+    }));
+
+    const result = await tools.privateZoneUpsert(zoneName);
+
+    expect(result).toBeTruthy();
+    expect(result.name).toBe(zoneName);
+    expect(result.location).toBe("Global");
+    expect(privateDnsClient.privateZones.beginCreateOrUpdateAndWait).toHaveBeenCalledExactlyOnceWith(
+      groupName,
+      zoneName,
+      {
+        location: "Global",
+      },
+      expect.anything()
+    );
+  });
+
+  it("can no-op existing via SDK", async () => {
+    const tools = new NetworkTools(sharedDependencies, toolOptions);
+    vi.spyOn(privateDnsClient.privateZones, "get").mockResolvedValue({
+      id: constructId(subscriptionId, groupName, "Microsoft.Network/privateDnsZones", zoneName),
+      location: "Global",
+      name: zoneName,
+    });
+    vi.spyOn(privateDnsClient.privateZones, "beginCreateOrUpdateAndWait");
+
+    const result = await tools.privateZoneUpsert(zoneName);
+
+    expect(result).toBeTruthy();
+    expect(result.name).toBe(zoneName);
+    expect(result.location).toBe("Global");
+    expect(privateDnsClient.privateZones.get).toHaveBeenCalledExactlyOnceWith(
+      groupName,
+      zoneName,
+      expect.anything());
+    expect(privateDnsClient.privateZones.beginCreateOrUpdateAndWait).not.toBeCalled();
   });
 
 });

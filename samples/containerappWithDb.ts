@@ -41,18 +41,12 @@ const vnet = rg.network.vnetUpsert(`vnet-sample-${rg.location}`, {
 vnet.then(vnet => console.log(`[net] vnet ${vnet.name} ${vnet.addressSpace?.addressPrefixes?.[0]}`));
 const getSubnet = async (name: string) => (await vnet).subnets!.find(s => s.name === name)!;
 
-const dbDnsZone = (async () => {
-  const zoneName = "privatelink.database.windows.net";
-  // TODO: an API helper may work better here
-  const dns = await rg.lax<PrivateZone>`network private-dns zone show --name ${zoneName}`
-    ?? await rg<PrivateZone>`network private-dns zone create --name ${zoneName}`;
-  console.log(`[net] dns ${dns.name}`);
-  return dns;
-})();
+const dbPrivateLinkZone = rg.network.privateZoneUpsert("privatelink.database.windows.net");
+dbPrivateLinkZone.then(zone => console.log(`[net] dns ${zone.name}`));
 
 (async () => {
   const linkName = `pdlink-sampledb-${rg.location}`;
-  const { name: zoneName } = await dbDnsZone;
+  const { name: zoneName } = await dbPrivateLinkZone;
   // TODO: an API helper may work better here
   let link = await rg.lax<VirtualNetworkLink>`network private-dns link vnet show --name ${linkName} --zone-name ${zoneName}`
   // TODO: check to make sure the vnet matches correctly
@@ -113,7 +107,7 @@ runOnDb(async (pool) => {
     --name ${name} --connection-name ${name} --nic-name ${name}
     --group-id sqlServer --private-connection-resource-id ${(await dbServer).id}
     --vnet-name ${(await vnet).name} --subnet ${(await getSubnet("db")).name}`;
-  const { name: zoneName, id: zoneId } = await dbDnsZone;
+  const { name: zoneName, id: zoneId } = await dbPrivateLinkZone;
   await rg`network private-endpoint dns-zone-group create
     --name ${name} --endpoint-name ${privateEndpoint.name}
     --private-dns-zone ${zoneId} --zone-name ${zoneName}`;

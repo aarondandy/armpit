@@ -16,7 +16,9 @@ export async function handleGet<T>(promise: Promise<T>) : Promise<T | null> {
   }
 }
 
-export interface SubscriptionBoundServiceClientConstructor<TClient extends ServiceClient> {
+type ServiceClientLike = Pick<ServiceClient, "sendRequest" | "sendOperationRequest">;
+
+export interface SubscriptionBoundServiceClientConstructor<TClient extends ServiceClientLike> {
   new (
     credentials: TokenCredential,
     subscriptionId: string,
@@ -32,7 +34,7 @@ export class ManagementClientFactory {
     this.#credentialFactory = credentialFactory;
   }
 
-  get<TClient extends ServiceClient>(constructor: SubscriptionBoundServiceClientConstructor<TClient>, subscriptionId: SubscriptionId, options?: ServiceClientOptions): TClient {
+  get<TClient extends ServiceClientLike>(constructor: SubscriptionBoundServiceClientConstructor<TClient>, subscriptionId: SubscriptionId, options?: ServiceClientOptions): TClient {
     if (subscriptionId == null) {
       throw new Error("Subscription ID is required.")
     } else if (!isSubscriptionId(subscriptionId)) {
