@@ -10,6 +10,7 @@ import { NetworkManagementClient } from "@azure/arm-network";
 import type {
   PrivateDnsManagementClientOptionalParams,
   PrivateZone,
+  VirtualNetworkLink,
 } from "@azure/arm-privatedns";
 import { PrivateDnsManagementClient } from "@azure/arm-privatedns";
 import {
@@ -20,6 +21,7 @@ import {
   type SubscriptionId,
   extractSubscriptionFromId,
   idsEquals,
+  isResourceId,
 } from "./azureUtils.js";
 import { handleGet, ManagementClientFactory } from "./azureSdkUtils.js";
 import { type AzCliInvoker } from "./azCliUtils.js";
@@ -41,6 +43,12 @@ interface CommonPrivateDnsOptions {
 }
 
 interface PrivateZoneUpsertOptions extends CommonPrivateDnsOptions {
+}
+
+interface PrivateZoneVnetLinkUpsertOptions extends CommonPrivateDnsOptions {
+  virtualNetwork: { id?: string } | string,
+  registrationEnabled?: boolean,
+  resolutionPolicy?: "Default" | "NxDomainRedirect",
 }
 
 type DelegationDescriptor = Pick<Delegation, "name" | "serviceName">;
@@ -222,7 +230,13 @@ export class NetworkTools {
     }
 
     abortSignal?.throwIfAborted();
-    return this.#invoker.lax<NetworkSecurityGroup>`network nsg show --name ${name}`;
+
+    const args = ["--name", name];
+    if (groupName) {
+      args.push("--resource-group", groupName);
+    }
+
+    return this.#invoker.lax<NetworkSecurityGroup>`network vnet show ${args}`;
   }
 
   async vnetUpsert(name: string, options?: VnetUpsertOptions): Promise<VirtualNetwork> {
@@ -367,7 +381,13 @@ export class NetworkTools {
     }
 
     abortSignal?.throwIfAborted();
-    return this.#invoker.lax<NetworkSecurityGroup>`network nsg show --name ${name}`;
+
+    const args = ["--name", name];
+    if (groupName) {
+      args.push("--resource-group", groupName);
+    }
+
+    return this.#invoker.lax<NetworkSecurityGroup>`network nsg show ${args}`;
   }
 
   async nsgUpsert(name: string, options?: NsgUpsertOptions): Promise<NetworkSecurityGroup> {
@@ -475,10 +495,12 @@ export class NetworkTools {
 
     abortSignal?.throwIfAborted();
 
-    const invokerFn = this.#invoker.lax<PrivateZone>;
-    return groupName
-      ? invokerFn`network private-dns zone show --name ${name} --group-name ${groupName}`
-      : invokerFn`network private-dns zone show --name ${name}`;
+    const args = ["--name", name];
+    if (groupName) {
+      args.push("--resource-group", groupName);
+    }
+
+    return this.#invoker.lax<PrivateZone>`network private-dns zone show ${args}`;
   }
 
   async privateZoneUpsert(name: string, options?: PrivateZoneUpsertOptions): Promise<PrivateZone> {
@@ -493,12 +515,98 @@ export class NetworkTools {
       zone = await client.privateZones.beginCreateOrUpdateAndWait(
         groupName,
         name,
-        {location: "Global"},
+        {location: "global"},
         {abortSignal}
       );
     }
 
     return zone;
+  }
+
+  async privateZoneVnetLinkGet(zoneName: string, name: string, options?: CommonNetworkToolsOptions) {
+    let { groupName, subscriptionId, abortSignal } = this.#getResourceContext(options);
+    if (subscriptionId != null && groupName != null) {
+      const client = this.getPrivateZoneClient(subscriptionId);
+      return await handleGet(client.virtualNetworkLinks.get(groupName, zoneName, name, {abortSignal}));
+    }
+
+    abortSignal?.throwIfAborted();
+
+    const args = ["--zone-name", zoneName, "--name", name];
+    if (groupName) {
+      args.push("--resource-group", groupName);
+    }
+
+    return this.#invoker.lax<VirtualNetworkLink>`network private-dns link vnet show ${args}`;
+  }
+
+  async privateZoneVnetLinkUpsert(zoneName: string, name: string, options: PrivateZoneVnetLinkUpsertOptions) {
+    let { groupName, subscriptionId, abortSignal } = this.#getResourceContext(options);
+    if (groupName == null) {
+      throw new Error("A group name is required to perform DNS zone link operations");
+    }
+
+    let virtualNetworkId: string | undefined;
+    if (isResourceId(options.virtualNetwork)) {
+      virtualNetworkId = options.virtualNetwork;
+    } else if (typeof options.virtualNetwork === "string") {
+      const vnetMatch = await this.vnetGet(options.virtualNetwork, options);
+      if (vnetMatch == null) {
+        throw new Error(`Failed to find vnet '${virtualNetworkId}'`);
+      }
+
+      virtualNetworkId = vnetMatch.id;
+    } else {
+      virtualNetworkId = options.virtualNetwork.id;
+    }
+
+    let upsertRequired = false;
+    let link = await this.privateZoneVnetLinkGet(zoneName, name, options);
+    if (link) {
+      if (virtualNetworkId != null && link.virtualNetwork?.id !== virtualNetworkId) {
+        link.virtualNetwork = { id: virtualNetworkId };
+        upsertRequired = true;
+      }
+
+      if (options.registrationEnabled != null && options.registrationEnabled !== link.registrationEnabled) {
+        upsertRequired = true;
+        link.registrationEnabled = options.registrationEnabled;
+      }
+
+      if (options.resolutionPolicy != null && options.resolutionPolicy !== link.resolutionPolicy) {
+        upsertRequired = true;
+        link.resolutionPolicy = options.resolutionPolicy;
+      }
+
+    } else {
+      upsertRequired = true;
+      link = {
+        name,
+        location: "global",
+        virtualNetwork: { id: virtualNetworkId },
+      };
+
+      if (options.registrationEnabled != null) {
+        link.registrationEnabled = options.registrationEnabled;
+      }
+
+      if (options.resolutionPolicy != null) {
+        link.resolutionPolicy = options.resolutionPolicy;
+      }
+    }
+
+    if (upsertRequired) {
+      const client = this.getPrivateZoneClient(subscriptionId);
+      link = await client.virtualNetworkLinks.beginCreateOrUpdateAndWait(
+        groupName,
+        zoneName,
+        name,
+        link,
+        {abortSignal}
+      );
+    }
+
+    return link;
   }
 
   getClient(subscriptionId?: SubscriptionId | null, options?: NetworkManagementClientOptionalParams): NetworkManagementClient {

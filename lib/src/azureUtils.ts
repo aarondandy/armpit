@@ -57,7 +57,15 @@ export function isNamedLocationDescriptor<T extends any>(resource?: T): resource
 //   zones: string
 // };
 
-export function extractSubscriptionFromId(resourceId?: string) {
+export type ResourceId = string;
+
+export function isResourceId(resourceId?: unknown): resourceId is ResourceId {
+  return resourceId != null
+    && typeof resourceId === "string"
+    && /\/subscriptions\/([^/]+)\//i.test(resourceId);
+}
+
+export function extractSubscriptionFromId(resourceId?: string): string | null {
   if (!resourceId) {
     return null;
   }

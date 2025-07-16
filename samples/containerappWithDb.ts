@@ -1,7 +1,6 @@
 import { az, NameHash } from "armpit";
 import mssql from "mssql";
 import type { PrivateEndpoint } from "@azure/arm-network";
-import type { PrivateZone, VirtualNetworkLink } from "@azure/arm-privatedns";
 import type { ManagedEnvironment, ContainerApp } from "@azure/arm-appcontainers";
 import type { Server as SqlServer, Database as SqlDatabase } from "@azure/arm-sql";
 import { loadMyEnvironment } from "./utils/state.js";
@@ -41,17 +40,17 @@ const vnet = rg.network.vnetUpsert(`vnet-sample-${rg.location}`, {
 vnet.then(vnet => console.log(`[net] vnet ${vnet.name} ${vnet.addressSpace?.addressPrefixes?.[0]}`));
 const getSubnet = async (name: string) => (await vnet).subnets!.find(s => s.name === name)!;
 
-const dbPrivateLinkZone = rg.network.privateZoneUpsert("privatelink.database.windows.net");
-dbPrivateLinkZone.then(zone => console.log(`[net] dns ${zone.name}`));
+const zonePrivateDatabase = rg.network.privateZoneUpsert("privatelink.database.windows.net");
+zonePrivateDatabase.then(zone => console.log(`[net] dns ${zone.name}`));
 
 (async () => {
-  const linkName = `pdlink-sampledb-${rg.location}`;
-  const { name: zoneName } = await dbPrivateLinkZone;
-  // TODO: an API helper may work better here
-  let link = await rg.lax<VirtualNetworkLink>`network private-dns link vnet show --name ${linkName} --zone-name ${zoneName}`
-  // TODO: check to make sure the vnet matches correctly
-  link ??= await rg<VirtualNetworkLink>`network private-dns link vnet create --name ${linkName} --zone-name ${zoneName}
-    --virtual-network ${(await vnet).id} --registration-enabled false`;
+  let link = await rg.network.privateZoneVnetLinkUpsert(
+    (await zonePrivateDatabase).name!,
+    `pdlink-sampledb-${rg.location}`,
+    {
+      virtualNetwork: await vnet,
+      registrationEnabled: false,
+    });
   console.log(`[net] dns link ${link.name} ready`);
 })();
 
@@ -107,7 +106,7 @@ runOnDb(async (pool) => {
     --name ${name} --connection-name ${name} --nic-name ${name}
     --group-id sqlServer --private-connection-resource-id ${(await dbServer).id}
     --vnet-name ${(await vnet).name} --subnet ${(await getSubnet("db")).name}`;
-  const { name: zoneName, id: zoneId } = await dbPrivateLinkZone;
+  const { name: zoneName, id: zoneId } = await zonePrivateDatabase;
   await rg`network private-endpoint dns-zone-group create
     --name ${name} --endpoint-name ${privateEndpoint.name}
     --private-dns-zone ${zoneId} --zone-name ${zoneName}`;

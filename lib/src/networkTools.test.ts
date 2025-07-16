@@ -624,7 +624,7 @@ describe("upsert private zone", () => {
     vi.spyOn(privateDnsClient.privateZones, "beginCreateOrUpdateAndWait").mockImplementationOnce((groupName, name, zone) => Promise.resolve({
       ...zone,
       id: constructId(subscriptionId, groupName, "Microsoft.Network/privateDnsZones", name),
-      location: "Global",
+      location: "global",
       name,
     }));
 
@@ -632,12 +632,12 @@ describe("upsert private zone", () => {
 
     expect(result).toBeTruthy();
     expect(result.name).toBe(zoneName);
-    expect(result.location).toBe("Global");
+    expect(result.location).toBe("global");
     expect(privateDnsClient.privateZones.beginCreateOrUpdateAndWait).toHaveBeenCalledExactlyOnceWith(
       groupName,
       zoneName,
       {
-        location: "Global",
+        location: "global",
       },
       expect.anything()
     );
