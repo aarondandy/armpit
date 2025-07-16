@@ -133,16 +133,6 @@ const app = (async() => {
     "FOO=BAR",
   ];
 
-  await runOnDb(async (pool) => {
-    const username = appName;
-    const statements = [
-      `IF NOT EXISTS (SELECT 1 FROM sys.sysusers WHERE [name] = '${username}') CREATE USER [${username}] FROM EXTERNAL PROVIDER;`,
-      ...["db_datareader", "db_datawriter", "db_ddladmin"].map(role => `EXEC sp_addrolemember [${role}],[${username}];`),
-    ];
-    await pool.request().query(statements.join("\n"));
-  });
-  console.log(`[app] pre-permissioned ${appName} to database`);
-
   // Remaking the app each time causes issues. An upsert would work much better.
   const app = await rg<ContainerApp>`containerapp create
     --name ${appName} --environment ${(await containerAppEnv).id}
@@ -151,6 +141,16 @@ const app = (async() => {
     --env-vars ${envVars}
     --system-assigned`;
   console.log(`[app] ${app.name} recreated`);
+
+  await runOnDb(async (pool) => {
+    const username = appName;
+    const statements = [
+      `IF NOT EXISTS (SELECT 1 FROM sys.sysusers WHERE [name] = '${username}') CREATE USER [${username}] FROM EXTERNAL PROVIDER;`,
+      ...["db_datareader", "db_datawriter", "db_ddladmin"].map(role => `EXEC sp_addrolemember [${role}],[${username}];`),
+    ];
+    await pool.request().query(statements.join("\n"));
+  });
+  console.log(`[app] permissioned ${appName} to database`);
 
   await rg`containerapp update --name ${app.name} --replace-env-vars ${envVars}`;
   console.log("[app] Set env vars");
