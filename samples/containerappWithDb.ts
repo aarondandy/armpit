@@ -14,7 +14,7 @@ const targetLocation = targetEnvironment.defaultLocation ?? "centralus";
 await az.account.setOrLogin(targetEnvironment);
 
 const myIp = fetch("https://api.ipify.org/").then(r => r.text());
-const myUser = await az.account.showSignedInUser();
+let myUser = await az.account.showSignedInUser();
 
 const rg = await az.group(`samples-${targetLocation}`, targetLocation);
 const resourceHash = new NameHash(targetEnvironment.subscriptionId, { defaultLength: 6 }).concat(rg.name);
@@ -40,19 +40,18 @@ const vnet = rg.network.vnetUpsert(`vnet-sample-${rg.location}`, {
 vnet.then(vnet => console.log(`[net] vnet ${vnet.name} ${vnet.addressSpace?.addressPrefixes?.[0]}`));
 const getSubnet = async (name: string) => (await vnet).subnets!.find(s => s.name === name)!;
 
-const zonePrivateDatabase = rg.network.privateZoneUpsert("privatelink.database.windows.net");
-zonePrivateDatabase.then(zone => console.log(`[net] dns ${zone.name}`));
+const zonePlDb = rg.network.privateZoneUpsert("privatelink.database.windows.net");
+zonePlDb.then(zone => console.log(`[net] dns ${zone.name}`));
 
-(async () => {
-  let link = await rg.network.privateZoneVnetLinkUpsert(
-    (await zonePrivateDatabase).name!,
-    `pdlink-sampledb-${rg.location}`,
-    {
-      virtualNetwork: await vnet,
-      registrationEnabled: false,
-    });
-  console.log(`[net] dns link ${link.name} ready`);
-})();
+const link = (async () => rg.network.privateZoneVnetLinkUpsert(
+  (await zonePlDb).name!,
+  `pdlink-sampledb-${rg.location}`,
+  {
+    virtualNetwork: await vnet,
+    registrationEnabled: false,
+  }
+))();
+link.then(link => console.log(`[net] dns link ${link.name} ready`));
 
 // ----
 // Data
@@ -63,19 +62,14 @@ const dbServer = rg<SqlServer>`sql server create -n db-sample-${resourceHash}-${
   --external-admin-name ${myUser.userPrincipalName} --external-admin-sid ${myUser.id}`;
 dbServer.then(s => console.log(`[db] server created ${s.fullyQualifiedDomainName}`));
 
-const db = (async () => {
-  const db = await rg<SqlDatabase>`sql db create
-    --name sample --server ${(await dbServer).name}
-    --tier Basic`;
-  console.log(`[db] database ${db.name} created`);
-  return db;
-})();
+const db = (async () => rg<SqlDatabase>`sql db create --name sample --server ${(await dbServer).name} --tier Basic`)();
+db.then(db => console.log(`[db] database ${db.name} created`));
 
 const runOnDb = async (action: (pool: mssql.ConnectionPool) => Promise<void>) => {
   const pool = new mssql.ConnectionPool({
     server: `${(await dbServer).name}.database.windows.net`,
     database: (await db).name,
-    authentication: { type: "token-credential", options: { credential: rg.getCredential() } }
+    authentication: { type: "token-credential", options: { credential: rg.getCredential() } },
   });
   try {
     await pool.connect();
@@ -91,6 +85,7 @@ runOnDb(async (pool) => {
     "IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_NumberSearch_Value' AND object_id = OBJECT_ID('NumberSearch')) CREATE CLUSTERED INDEX IX_NumberSearch_Value ON NumberSearch ([Value]);"
   ];
   await pool.request().query(statements.join("\n"));
+  console.log("[db] schema defined");
 });
 
 (async () => {
@@ -106,7 +101,7 @@ runOnDb(async (pool) => {
     --name ${name} --connection-name ${name} --nic-name ${name}
     --group-id sqlServer --private-connection-resource-id ${(await dbServer).id}
     --vnet-name ${(await vnet).name} --subnet ${(await getSubnet("db")).name}`;
-  const { name: zoneName, id: zoneId } = await zonePrivateDatabase;
+  const { name: zoneName, id: zoneId } = await zonePlDb;
   await rg`network private-endpoint dns-zone-group create
     --name ${name} --endpoint-name ${privateEndpoint.name}
     --private-dns-zone ${zoneId} --zone-name ${zoneName}`;
@@ -117,45 +112,46 @@ runOnDb(async (pool) => {
 // Services
 // --------
 
-const containerAppEnv = rg<ManagedEnvironment>`containerapp env create
+const containerAppEnv = (async () => rg<ManagedEnvironment>`containerapp env create
   --name appenv-sample-${resourceHash}-${rg.location}
   --enable-workload-profiles true --logs-destination none
-  --infrastructure-subnet-resource-id ${(await getSubnet("app")).id}`;
+  --infrastructure-subnet-resource-id ${(await getSubnet("app")).id}`)();
 containerAppEnv.then(appEnv => console.log(`[app] app environment ${appEnv.name} ready via ${appEnv.staticIp}`));
 
 // TODO: reduce the line breaks that come from containerapp commands. Likely due to a progress spinner.
 
 const app = (async() => {
-  const appName = `app-sample-${resourceHash}-${rg.location}`;
   const sqlConnectionString = `Server=${(await dbServer).name}.database.windows.net;Database=${(await db).name};Authentication=Active Directory Managed Identity;`;
   const envVars = [
     `ConnectionStrings__MyDatabase=${sqlConnectionString}`,
     "FOO=BAR",
   ];
 
-  // Remaking the app each time causes issues. An upsert would work much better.
+  // TODO: Remaking the app each time causes issues. An upsert would work much better.
   const app = await rg<ContainerApp>`containerapp create
-    --name ${appName} --environment ${(await containerAppEnv).id}
+    --name app-sample-${resourceHash} --environment ${(await containerAppEnv).id}
     --image ${"aarondandy/numbers:latest"}
     --ingress external --target-port 8080
     --env-vars ${envVars}
     --system-assigned`;
   console.log(`[app] ${app.name} recreated`);
 
+  // permission app to DB
   await runOnDb(async (pool) => {
-    const username = appName;
+    const username = app.name;
     const statements = [
       `IF NOT EXISTS (SELECT 1 FROM sys.sysusers WHERE [name] = '${username}') CREATE USER [${username}] FROM EXTERNAL PROVIDER;`,
       ...["db_datareader", "db_datawriter", "db_ddladmin"].map(role => `EXEC sp_addrolemember [${role}],[${username}];`),
     ];
     await pool.request().query(statements.join("\n"));
   });
-  console.log(`[app] permissioned ${appName} to database`);
+  console.log(`[app] ${app.name} database access granted`);
 
+  // TODO: avoid this redundant update by performing some kind of upsert instead
   await rg`containerapp update --name ${app.name} --replace-env-vars ${envVars}`;
-  console.log("[app] Set env vars");
+  console.log("[app] set env vars");
 
   return app;
 })();
 
-console.log(`[app] app revision ready ${"https://" + (await app).latestRevisionFqdn}`);
+console.log(`[app] app revision ready ${"https://" + (await app).configuration?.ingress?.fqdn}`);
