@@ -117,3 +117,14 @@ export function isArrayEqualUnordered<T>(a: T[], b: T[], equals: (a: T, b: T) =>
 
   return aSearch.length === 0 && bSearch.length === 0;
 }
+
+export function mergeAbortSignals(...args: (AbortSignal | undefined | null)[]): AbortSignal | null {
+  const signals = args.filter(s => s != null);
+  if (signals.length === 1) {
+    return signals[0];
+  } else if (signals.length > 1) {
+    return AbortSignal.any(signals);
+  } else {
+    return null;
+  }
+}

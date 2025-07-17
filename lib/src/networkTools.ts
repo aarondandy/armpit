@@ -16,6 +16,7 @@ import { PrivateDnsManagementClient } from "@azure/arm-privatedns";
 import {
   isStringValueOrValueArrayEqual,
   isArrayEqualUnordered,
+  mergeAbortSignals,
 } from "./tsUtils.js";
 import {
   type SubscriptionId,
@@ -628,7 +629,7 @@ export class NetworkTools {
       groupName: options?.groupName ?? this.#options.groupName ?? null,
       subscriptionId: options?.subscriptionId ?? this.#options.subscriptionId ?? null,
       location: options?.location ?? this.#options.location ?? null,
-      abortSignal: options?.abortSignal ?? this.#options.abortSignal,
+      abortSignal: mergeAbortSignals(options?.abortSignal, this.#options.abortSignal) ?? undefined,
     }
   }
 }
