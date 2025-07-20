@@ -3,10 +3,12 @@ import type {
   ExecaError,
   Result as ExecaResult,
   SyncResult as ExecaSyncResult,
-  TemplateExpression as ExecaTemplateExpression
+  TemplateExpression as ExecaTemplateExpression,
 } from "execa";
 
-interface Stringable { toString(): string };
+interface Stringable {
+  toString(): string;
+}
 
 type AzTemplateExpressionItem =
   | undefined // Many properties on ARM types are optional, which is annoying
@@ -18,17 +20,17 @@ type AzTemplateExpressionItem =
   | Stringable;
 export type AzTemplateExpression = AzTemplateExpressionItem | readonly AzTemplateExpressionItem[];
 
-function isExecaResult(value: unknown): value is (ExecaResult | ExecaSyncResult) {
+function isExecaResult(value: unknown): value is ExecaResult | ExecaSyncResult {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return !!(value && ((value as any).command || (value as any).stdout || (value as any).stderr));
 }
 
 interface InvokerOptions {
-  env?: NodeJS.ProcessEnv,
-  defaultLocation?: string,
-  defaultResourceGroup?: string,
-  forceAzCommandPrefix?: boolean,
-  abortSignal?: AbortSignal,
+  env?: NodeJS.ProcessEnv;
+  defaultLocation?: string;
+  defaultResourceGroup?: string;
+  forceAzCommandPrefix?: boolean;
+  abortSignal?: AbortSignal;
 }
 
 function ensureAzPrefix(templates: TemplateStringsArray) {
@@ -36,7 +38,7 @@ function ensureAzPrefix(templates: TemplateStringsArray) {
     const [firstCookedTemplate, ...remainingCookedTemplates] = templates;
     const [firstRawTemplate, ...remainingRawTemplates] = templates.raw;
     templates = Object.assign([`az ${firstCookedTemplate}`, ...remainingCookedTemplates], {
-      raw: [`az ${firstRawTemplate}`, ...remainingRawTemplates]
+      raw: [`az ${firstRawTemplate}`, ...remainingRawTemplates],
     });
   }
 
@@ -88,14 +90,21 @@ export interface AzCliInvoker {
 }
 
 interface CliInvokerFnFactoryOptions {
-  laxResultHandling?: boolean,
-  unwrapNewResults?: boolean,
-  simplifyContainerAppResults?: boolean,
+  laxResultHandling?: boolean;
+  unwrapNewResults?: boolean;
+  simplifyContainerAppResults?: boolean;
 }
 
-type InvokerFnFactory = <TOptions extends CliInvokerFnFactoryOptions>(options: TOptions) => <TResult>(templates: TemplateStringsArray, ...expressions: readonly AzTemplateExpression[]) => Promise<TOptions extends { laxParsing: true } ? (TResult | null) : TResult>;
+type InvokerFnFactory = <TOptions extends CliInvokerFnFactoryOptions>(
+  options: TOptions,
+) => <TResult>(
+  templates: TemplateStringsArray,
+  ...expressions: readonly AzTemplateExpression[]
+) => Promise<TOptions extends { laxParsing: true } ? TResult | null : TResult>;
 
-export function execaAzCliInvokerFactory<TInvokerOptions extends InvokerOptions>(options: TInvokerOptions): AzCliInvoker {
+export function execaAzCliInvokerFactory<TInvokerOptions extends InvokerOptions>(
+  options: TInvokerOptions,
+): AzCliInvoker {
   const env: NodeJS.ProcessEnv = {
     ...options.env,
     AZURE_CORE_OUTPUT: "json", // request json by default
@@ -154,7 +163,7 @@ export function execaAzCliInvokerFactory<TInvokerOptions extends InvokerOptions>
 
             return e as ExecaTemplateExpression;
         }
-      };
+      }
       const execaExpressions = expressions.map(cleanExpression);
 
       let invocationResult;
@@ -220,5 +229,5 @@ export function execaAzCliInvokerFactory<TInvokerOptions extends InvokerOptions>
   return {
     strict: invokerFnBuilder({ ...baseInvokerOptions }),
     lax: invokerFnBuilder({ ...baseInvokerOptions, laxResultHandling: true }),
-  }
+  };
 }

@@ -1,9 +1,4 @@
-import {
-  type Account,
-  type ResourceSummary,
-  isSubscriptionId,
-  isTenantId,
-} from "./azureUtils.js";
+import { type Account, type ResourceSummary, isSubscriptionId, isTenantId } from "./azureUtils.js";
 import { NameHash } from "./nameHash.js";
 import { ExistingGroupLocationConflictError, GroupNotEmptyError } from "./errors.js";
 import { execaAzCliInvokerFactory } from "./azCliUtils.js";
@@ -13,12 +8,9 @@ import { ResourceGroupTools } from "./resourceGroupTools.js";
 import { AzGlobalInterface } from "./interface.js";
 import { ArmpitCliCredentialFactory } from "./armpitCredential.js";
 
-export type {
-  Account,
-  ResourceSummary,
-};
+export type { Account, ResourceSummary };
 
-const az = (function(): AzGlobalInterface {
+const az = (function (): AzGlobalInterface {
   const abortController = new AbortController();
   process.on("SIGINT", () => abortController.abort("SIGINT received"));
   process.on("SIGTERM", () => abortController.abort("SIGTERM received"));
@@ -40,9 +32,7 @@ const az = (function(): AzGlobalInterface {
   });
   const cliResult = Object.assign(mainFn, {
     account: accountTools,
-    group: new ResourceGroupTools(sharedDependencies, {
-      abortSignal: abortController.signal
-    })
+    group: new ResourceGroupTools(sharedDependencies, { abortSignal: abortController.signal }),
   });
   return Object.assign(cliResult, {
     strict: invoker.strict,
@@ -52,11 +42,4 @@ const az = (function(): AzGlobalInterface {
 })();
 
 export default az;
-export {
-  az,
-  isSubscriptionId,
-  isTenantId,
-  NameHash,
-  ExistingGroupLocationConflictError,
-  GroupNotEmptyError,
-}
+export { az, isSubscriptionId, isTenantId, NameHash, ExistingGroupLocationConflictError, GroupNotEmptyError };

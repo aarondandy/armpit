@@ -8,17 +8,17 @@ import {
   isSubscriptionIdOrName,
   isScope,
   type AzCliAccessToken,
-} from "./azureUtils.js"
+} from "./azureUtils.js";
 import type { AzCliInvoker } from "./azCliUtils.js";
 
 export interface ArmpitCredentialOptions {
-  tenantId?: TenantId,
-  subscription?: SubscriptionIdOrName,
+  tenantId?: TenantId;
+  subscription?: SubscriptionIdOrName;
 }
 
 export interface ArmpitTokenContext {
-  tenantId?: TenantId,
-  subscriptionId?: SubscriptionId,
+  tenantId?: TenantId;
+  subscriptionId?: SubscriptionId;
 }
 
 /**
@@ -44,7 +44,7 @@ export function buildCliCredential(invokers: AzCliInvoker, options?: ArmpitCrede
 
   let lastTokenContext: ArmpitTokenContext | null = null;
 
-  const getToken = async function(scopes: string | string[], options: GetTokenOptions = {}): Promise<AccessToken> {
+  const getToken = async function (scopes: string | string[], options: GetTokenOptions = {}): Promise<AccessToken> {
     // This is loosely based on AzureCliCredential but uses the internals provided by this library
 
     if (typeof scopes === "string") {
@@ -60,19 +60,27 @@ export function buildCliCredential(invokers: AzCliInvoker, options?: ArmpitCrede
     const tenantId = options?.tenantId ?? defaultTenantId;
     if (tenantId) {
       args.push("--tenant", tenantId);
-    }
-    else if (defaultSubscription) {
+    } else if (defaultSubscription) {
       args.push("--subscription", defaultSubscription);
     }
 
     const result = await invokers.strict<AzCliAccessToken>`account get-access-token ${args}`;
 
-    let expiresOn = (typeof result.expires_on ==="number" ? result.expires_on : Number.parseInt(result.expires_on, 10)) * 1000;
-    if (isNaN(expiresOn)) {
-      expiresOn = new Date(result.expiresOn).getTime();
+    let expiresOnMs: number | null = null;
+
+    if (result.expires_on != null) {
+      if (typeof result.expires_on === "number") {
+        expiresOnMs = result.expires_on * 1000;
+      } else {
+        expiresOnMs = Number.parseInt(result.expires_on, 10) * 1000;
+      }
     }
 
-    if (isNaN(expiresOn)) {
+    if (expiresOnMs == null || isNaN(expiresOnMs)) {
+      expiresOnMs = new Date(result.expiresOn).getTime();
+    }
+
+    if (expiresOnMs == null || isNaN(expiresOnMs)) {
       throw new Error("Failed to extract token expiration");
     }
 
@@ -81,7 +89,7 @@ export function buildCliCredential(invokers: AzCliInvoker, options?: ArmpitCrede
       throw new Error(`Token type ${tokenType} is not supported`);
     }
 
-    lastTokenContext = { };
+    lastTokenContext = {};
     if (isSubscriptionId(result.subscription)) {
       lastTokenContext.subscriptionId = result.subscription;
     }
@@ -92,14 +100,14 @@ export function buildCliCredential(invokers: AzCliInvoker, options?: ArmpitCrede
 
     return {
       token: result.accessToken,
-      expiresOnTimestamp: expiresOn,
+      expiresOnTimestamp: expiresOnMs,
       tokenType,
     };
-  }
+  };
 
-  const getLastTokenContext = function() {
+  const getLastTokenContext = function () {
     return lastTokenContext;
-  }
+  };
 
   // A plain object is returned so libraries that clone the credential object like tedious/mssql can be compatible.
   return {
@@ -121,7 +129,7 @@ export interface ArmpitCredentialProvider {
 }
 
 export class ArmpitCliCredentialFactory {
-  #cache: {options: ArmpitCredentialOptions, credential: ArmpitCredential}[] = [];
+  #cache: { options: ArmpitCredentialOptions; credential: ArmpitCredential }[] = [];
   #defaultInvoker: AzCliInvoker | null;
 
   constructor(defaultInvoker?: AzCliInvoker) {
@@ -134,9 +142,8 @@ export class ArmpitCliCredentialFactory {
       throw new Error("An invoker is required to build a credential");
     }
 
-    const cacheKeyValue: string | null = options != null && (options.subscription != null || options.tenantId != null)
-      ? JSON.stringify(options)
-      : null;
+    const cacheKeyValue: string | null =
+      options != null && (options.subscription != null || options.tenantId != null) ? JSON.stringify(options) : null;
 
     if (cacheKeyValue) {
       const matching = this.#cache.find(e => e.options && JSON.stringify(e.options) === cacheKeyValue);
@@ -148,7 +155,7 @@ export class ArmpitCliCredentialFactory {
     const credential = buildCliCredential(invoker, options);
 
     if (cacheKeyValue && options) {
-      this.#cache.push({options, credential});
+      this.#cache.push({ options, credential });
     }
 
     return credential;

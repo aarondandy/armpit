@@ -1,13 +1,13 @@
 import {
   type ResourceGroup,
   type ResourceManagementClientOptionalParams,
-  ResourceManagementClient
+  ResourceManagementClient,
 } from "@azure/arm-resources";
 import { CallableClassBase, mergeAbortSignals } from "./tsUtils.js";
 import { ExistingGroupLocationConflictError, GroupNotEmptyError } from "./errors.js";
 import {
   type ResourceSummary,
-  isNameWithLocationDescriptor,
+  hasNameAndLocation,
   extractSubscriptionFromId,
   isSubscriptionId,
   type SubscriptionId,
@@ -19,24 +19,24 @@ import { AzGroupInterface } from "./interface.js";
 import { NetworkTools } from "./networkTools.js";
 
 interface GroupToolsBaseOptions {
-  subscriptionId?: SubscriptionId,
-  abortSignal?: AbortSignal,
+  subscriptionId?: SubscriptionId;
+  abortSignal?: AbortSignal;
 }
 
 interface GroupToolsConstructorOptions extends GroupToolsBaseOptions {
-  location?: string,
+  location?: string;
 }
 
 interface GroupToolsDependencies {
-  invoker: AzCliInvoker,
-  credentialFactory: ArmpitCliCredentialFactory,
-  managementClientFactory: ManagementClientFactory,
+  invoker: AzCliInvoker;
+  credentialFactory: ArmpitCliCredentialFactory;
+  managementClientFactory: ManagementClientFactory;
 }
 
 interface GroupUpsertDescriptor {
-  name: string,
-  location: string,
-  subscriptionId?: SubscriptionId
+  name: string;
+  location: string;
+  subscriptionId?: SubscriptionId;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
@@ -58,9 +58,19 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
     this.#options = options;
   }
 
-  protected fnImpl(name: string, location: string, subscriptionId?: SubscriptionId, abortSignal?: AbortSignal): Promise<AzGroupInterface>;
+  protected fnImpl(
+    name: string,
+    location: string,
+    subscriptionId?: SubscriptionId,
+    abortSignal?: AbortSignal,
+  ): Promise<AzGroupInterface>;
   protected fnImpl(descriptor: GroupUpsertDescriptor, abortSignal?: AbortSignal): Promise<AzGroupInterface>;
-  protected async fnImpl(nameOrDescriptor: string | GroupUpsertDescriptor, secondArg?: string | AbortSignal, thirdArg?: SubscriptionId, fourthArg?: AbortSignal): Promise<AzGroupInterface> {
+  protected async fnImpl(
+    nameOrDescriptor: string | GroupUpsertDescriptor,
+    secondArg?: string | AbortSignal,
+    thirdArg?: SubscriptionId,
+    fourthArg?: AbortSignal,
+  ): Promise<AzGroupInterface> {
     let groupName: string;
     let location: string;
     let subscriptionId: SubscriptionId | null = null;
@@ -90,7 +100,6 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
 
         subscriptionId = thirdArg;
       }
-
     } else if (nameOrDescriptor.name != null) {
       // overload: {name, location, subscriptionId?}, abortSignal?
       abortSignal = secondArg as AbortSignal;
@@ -108,7 +117,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
       location = nameOrDescriptor.location;
 
       if (nameOrDescriptor.subscriptionId != null) {
-        if (!isSubscriptionId(nameOrDescriptor.subscriptionId)){
+        if (!isSubscriptionId(nameOrDescriptor.subscriptionId)) {
           throw new Error("Provided subscription ID is not valid");
         }
 
@@ -130,7 +139,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
       subscriptionId = this.#options.subscriptionId;
     }
 
-    const baseOptions = {subscriptionId: subscriptionId ?? undefined, abortSignal};
+    const baseOptions = { subscriptionId: subscriptionId ?? undefined, abortSignal };
     let group = await this.get(groupName, baseOptions);
     if (group == null) {
       group = await this.create(groupName, location, baseOptions);
@@ -138,7 +147,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
       throw new ExistingGroupLocationConflictError(group, location);
     }
 
-    if (!isNameWithLocationDescriptor(group)) {
+    if (!hasNameAndLocation(group)) {
       throw new Error("Resource group is not correctly formed");
     }
 
@@ -187,7 +196,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
 
     if (subscriptionId != null) {
       const client = this.getClient(subscriptionId);
-      return await handleGet(client.resourceGroups.get(name, {abortSignal}));
+      return await handleGet(client.resourceGroups.get(name, { abortSignal }));
     }
 
     abortSignal?.throwIfAborted();
@@ -200,7 +209,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
 
     if (subscriptionId != null) {
       const client = this.getClient(subscriptionId);
-      const result = await client.resourceGroups.checkExistence(name, {abortSignal});
+      const result = await client.resourceGroups.checkExistence(name, { abortSignal });
       return !!result.body;
     }
 
@@ -220,7 +229,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
 
     if (subscriptionId != null) {
       const client = this.getClient(subscriptionId);
-      return await client.resourceGroups.createOrUpdate(name, {location}, {abortSignal});
+      return await client.resourceGroups.createOrUpdate(name, { location }, { abortSignal });
     }
 
     abortSignal?.throwIfAborted();
@@ -245,7 +254,9 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
     abortSignal?.throwIfAborted();
 
     const jmesQuery = "[].{id: id, name: name, type: type}"; // passes as an expression for correct escaping
-    const resources = await this.#invoker.strict<ResourceSummary[]>`resource list --resource-group ${name} --query ${jmesQuery}`;
+    const resources = await this.#invoker.strict<
+      ResourceSummary[]
+    >`resource list --resource-group ${name} --query ${jmesQuery}`;
     if (resources.length !== 0) {
       throw new GroupNotEmptyError(name, resources);
     }
@@ -256,7 +267,10 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
     return true;
   }
 
-  getClient(subscriptionId?: SubscriptionId, options?: ResourceManagementClientOptionalParams): ResourceManagementClient {
+  getClient(
+    subscriptionId?: SubscriptionId,
+    options?: ResourceManagementClientOptionalParams,
+  ): ResourceManagementClient {
     let clientSubscriptionId: SubscriptionId;
     if (subscriptionId != null) {
       if (!isSubscriptionId(subscriptionId)) {
@@ -266,7 +280,9 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
       clientSubscriptionId = subscriptionId;
     } else {
       if (this.#options.subscriptionId == null) {
-        throw new Error("No default subscription ID has been set, so an explicit subscription ID argument is required.")
+        throw new Error(
+          "No default subscription ID has been set, so an explicit subscription ID argument is required.",
+        );
       }
 
       clientSubscriptionId = this.#options.subscriptionId;

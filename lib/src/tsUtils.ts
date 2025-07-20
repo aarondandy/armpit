@@ -1,9 +1,9 @@
 export abstract class CallableClassBase {
   constructor() {
-    const closure = function(...args: unknown[]) {
+    const closure = function (...args: unknown[]) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return (closure as any as CallableClassBase).fnImpl(...args);
-    }
+    };
     return Object.setPrototypeOf(closure, new.target.prototype);
   }
 
@@ -14,8 +14,8 @@ export function isStringValueOrValueArrayEqual<T extends string | null | undefin
   a: T[] | T,
   b: T[] | T,
   opt?: {
-    sort?: boolean | ((a?: T, b?: T) => number),
-  }
+    sort?: boolean | ((a?: T, b?: T) => number);
+  },
 ) {
   if (a == null) {
     return b == null;
@@ -44,10 +44,9 @@ export function isStringValueArrayEqual<T extends string | null | undefined>(
   a: T[],
   b: T[],
   opt?: {
-    sort?: boolean | ((a?: T, b?: T) => number),
-  }
-)  {
-
+    sort?: boolean | ((a?: T, b?: T) => number);
+  },
+) {
   if (a.length !== b.length) {
     return false;
   }
@@ -70,8 +69,7 @@ export function isStringValueArrayEqual<T extends string | null | undefined>(
       if (b[i] != null) {
         return false;
       }
-    }
-    else if (aValue !== b[i]) {
+    } else if (aValue !== b[i]) {
       return false;
     }
   }
@@ -79,7 +77,7 @@ export function isStringValueArrayEqual<T extends string | null | undefined>(
   return true;
 }
 
-export function isArrayEqual<T>(a: T[], b: T[], equals: (a: T,b: T) => boolean) {
+export function isArrayEqual<T>(a: T[], b: T[], equals: (a: T, b: T) => boolean) {
   if (a.length !== b.length) {
     return false;
   }

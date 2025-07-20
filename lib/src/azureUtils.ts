@@ -1,25 +1,23 @@
-import { validate as uuidValidate } from 'uuid';
+import { validate as uuidValidate } from "uuid";
 import type { Resource } from "@azure/arm-resources";
 import type { Subscription } from "@azure/arm-resources-subscriptions";
-import {
-  isStringValueArrayEqual,
-} from "./tsUtils.js";
+import { isStringValueArrayEqual } from "./tsUtils.js";
 
 export type Account = Pick<Subscription, "id" | "managedByTenants" | "state" | "tenantId"> & {
-  readonly cloudName?: "AzureCloud" | (string & {}),
-  readonly homeTenantId?: string,
-  readonly isDefault: boolean,
-  readonly name: string,
+  readonly cloudName?: "AzureCloud" | (string & {});
+  readonly homeTenantId?: string;
+  readonly isDefault: boolean;
+  readonly name: string;
   readonly user?: {
-    readonly name: string,
-    readonly type: string
-  }
-}
+    readonly name: string;
+    readonly type: string;
+  };
+};
 
 export interface SimpleAdUser {
-  id: string,
-  userPrincipalName?: string,
-  displayName?: string,
+  id: string;
+  userPrincipalName?: string;
+  displayName?: string;
 }
 
 export type ResourceSummary = Pick<Resource, "id" | "name" | "type">;
@@ -39,15 +37,18 @@ export function isTenantId(value: unknown): value is TenantId {
   return uuidValidate(value);
 }
 
-export interface NameWithLocationDescriptor {
-  name: string,
-  location: string,
+export function hasNameAndLocation<T>(resource?: T): resource is T & { name: string; location: string } {
+  return hasName(resource) && hasLocation(resource);
 }
 
-export function isNameWithLocationDescriptor<T>(resource?: T): resource is T & NameWithLocationDescriptor {
-  return resource != null
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    && typeof (resource as any).name === "string" && typeof (resource as any).location === "string";
+export function hasName<T>(resource?: T): resource is T & { name: string } {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return resource != null && typeof (resource as any).name === "string";
+}
+
+export function hasLocation<T>(resource?: T): resource is T & { location: string } {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return resource != null && typeof (resource as any).location === "string";
 }
 
 // type VirtualMachineCreateResult = {
@@ -65,9 +66,7 @@ export function isNameWithLocationDescriptor<T>(resource?: T): resource is T & N
 export type ResourceId = string;
 
 export function isResourceId(resourceId?: unknown): resourceId is ResourceId {
-  return resourceId != null
-    && typeof resourceId === "string"
-    && /\/subscriptions\/([^/]+)\//i.test(resourceId);
+  return resourceId != null && typeof resourceId === "string" && /\/subscriptions\/([^/]+)\//i.test(resourceId);
 }
 
 export function extractSubscriptionFromId(resourceId?: string): string | null {
@@ -114,18 +113,19 @@ export function isScope(value: unknown): value is Scope {
 }
 
 export interface AzCliAccessToken {
-  accessToken: string,
-  expiresOn: string,
-  expires_on: number,
-  subscription: SubscriptionIdOrName,
-  tenant: TenantId,
-  tokenType: string,
+  accessToken: string;
+  expiresOn: string;
+  expires_on: number;
+  subscription: SubscriptionIdOrName;
+  tenant: TenantId;
+  tokenType: string;
 }
 
 export function idsEquals(
-  a: {id?: string | null}[] | null | undefined,
-  b: {id?: string | null}[] | null | undefined,
-  sort?: boolean) {
+  a: { id?: string | null }[] | null | undefined,
+  b: { id?: string | null }[] | null | undefined,
+  sort?: boolean,
+) {
   if (a == null) {
     return b == null;
   }
@@ -133,5 +133,9 @@ export function idsEquals(
     return false;
   }
 
-  return isStringValueArrayEqual(a.map(e => e.id), b.map(e => e.id), { sort });
+  return isStringValueArrayEqual(
+    a.map(e => e.id),
+    b.map(e => e.id),
+    { sort },
+  );
 }

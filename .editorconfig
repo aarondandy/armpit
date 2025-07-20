@@ -18,3 +18,15 @@ end_of_line = lf
 
 [*.json]
 indent_size = 2
+
+[*.{yml,yaml}]
+indent_size = 2
+
+[*.sh]
+end_of_line = lf
+
+[*.{cmd, bat}]
+end_of_line = crlf
+
+[*.ps1]
+indent_size = 2

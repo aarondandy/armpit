@@ -16,8 +16,7 @@ export interface AzGlobal extends ArmpitCredentialProvider {
   readonly account: AccountTools;
 }
 
-export interface AzGlobalInterface extends AzGlobal, AzCliInvokable {
-}
+export interface AzGlobalInterface extends AzGlobal, AzCliInvokable {}
 
 export interface AzLocationBound {
   readonly location: string;
@@ -29,5 +28,4 @@ export interface AzGroupBound extends AzLocationBound, ArmpitCredentialProvider 
   readonly network: NetworkTools;
 }
 
-export interface AzGroupInterface extends AzGroupBound, AzCliInvokable {
-}
+export interface AzGroupInterface extends AzGroupBound, AzCliInvokable {}

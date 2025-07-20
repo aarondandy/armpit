@@ -5,9 +5,9 @@ export class ExistingGroupLocationConflictError extends Error {
   expectedLocation: string;
   actualLocation: string;
 
-  constructor(actual: {name?: string, location?: string}, expected: string);
+  constructor(actual: { name?: string; location?: string }, expected: string);
   constructor(name: string, actual: string, expected: string);
-  constructor(actualOrName: {name?: string, location?: string} | string, secondArg: string, thirdArg?: string) {
+  constructor(actualOrName: { name?: string; location?: string } | string, secondArg: string, thirdArg?: string) {
     let groupName: string = "unknown";
     let actualLocation: string = "unknown";
     let expectedLocation: string = "unknown";
@@ -31,7 +31,7 @@ export class ExistingGroupLocationConflictError extends Error {
 
 export class GroupNotEmptyError extends Error {
   private static buildMessage(name: string, resources?: ResourceSummary[]) {
-    let message = `Group ${name ?? "unknown"} not empty.`
+    let message = `Group ${name ?? "unknown"} not empty.`;
     if (resources && resources.length > 0) {
       message += " Contains resources: " + resources.map(r => r.name ?? r.id ?? "unknown").join(", ");
     }

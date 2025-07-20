@@ -16,11 +16,11 @@ import {
   type ArmpitCredentialProvider,
   type ArmpitCredential,
   type ArmpitCredentialOptions,
-  ArmpitCliCredentialFactory
+  ArmpitCliCredentialFactory,
 } from "./armpitCredential.js";
 
 interface AccountToolsOptions {
-  abortSignal?: AbortSignal,
+  abortSignal?: AbortSignal;
 }
 
 type AccountToolsConstructorOptions = AccountToolsOptions;
@@ -31,13 +31,13 @@ interface AccountToolsDependencies {
 }
 
 interface AccountListOptions extends AccountToolsOptions {
-  all?: boolean,
-  refresh?: boolean,
+  all?: boolean;
+  refresh?: boolean;
 }
 
 interface AccountSelectionCriteria {
-  subscriptionId: SubscriptionId,
-  tenantId?: TenantId
+  subscriptionId: SubscriptionId;
+  tenantId?: TenantId;
 }
 
 /**
@@ -46,7 +46,6 @@ interface AccountSelectionCriteria {
  * Accounts roughly approximate a subscription accessed by a user via the Azure CLI.
  */
 export class AccountTools implements ArmpitCredentialProvider {
-
   /** Invokers associated with a global Azure CLI shell */
   #invoker: AzCliInvoker;
   #credentialFactory: ArmpitCliCredentialFactory;
@@ -72,7 +71,7 @@ export class AccountTools implements ArmpitCredentialProvider {
       return await this.#invoker.lax<Account>`account show`;
     } catch (invocationError) {
       const stderr = (<ExecaError>invocationError)?.stderr;
-      if (stderr && typeof stderr === "string" && (/az login|az account set/i).test(stderr)) {
+      if (stderr && typeof stderr === "string" && /az login|az account set/i.test(stderr)) {
         return null;
       }
 
@@ -99,7 +98,7 @@ export class AccountTools implements ArmpitCredentialProvider {
    * @remarks
    * This effectively invokes `az account list`.
    */
-  async list(options?: AccountListOptions) : Promise<Account[]> {
+  async list(options?: AccountListOptions): Promise<Account[]> {
     const { abortSignal } = this.#getInvocationContext(options);
     abortSignal?.throwIfAborted();
 
@@ -142,13 +141,21 @@ export class AccountTools implements ArmpitCredentialProvider {
    * @param subscriptionIdOrName The subscription ID or name to set the account to.
    * @param tenantId The tenant to log into when required.
    */
-  async setOrLogin(subscriptionIdOrName: SubscriptionIdOrName, tenantId?: TenantId, options?: AccountToolsOptions): Promise<Account | null>;
+  async setOrLogin(
+    subscriptionIdOrName: SubscriptionIdOrName,
+    tenantId?: TenantId,
+    options?: AccountToolsOptions,
+  ): Promise<Account | null>;
   /**
    * Sets the active account to the given subscription or initiates a login if required.
    * @param criteria The selection criteria for the account.
    */
   async setOrLogin(criteria: AccountSelectionCriteria, options?: AccountToolsOptions): Promise<Account | null>;
-  async setOrLogin(criteria: SubscriptionIdOrName | AccountSelectionCriteria, secondArg?: TenantId | AccountToolsOptions, thirdArg?: AccountToolsOptions): Promise<Account | null> {
+  async setOrLogin(
+    criteria: SubscriptionIdOrName | AccountSelectionCriteria,
+    secondArg?: TenantId | AccountToolsOptions,
+    thirdArg?: AccountToolsOptions,
+  ): Promise<Account | null> {
     let subscription: SubscriptionId | SubscriptionIdOrName;
     let tenantId: string | undefined;
     let options: AccountToolsOptions | undefined;
@@ -169,14 +176,14 @@ export class AccountTools implements ArmpitCredentialProvider {
         }
       }
 
-      filterAccountsToSubscription = (accounts) => {
+      filterAccountsToSubscription = accounts => {
         let results = accounts.filter(a => a.id === subscription);
         if (results.length === 0) {
           results = accounts.filter(a => a.name === subscription);
         }
 
         return results;
-      }
+      };
     } else if (criteria.subscriptionId != null) {
       // overload: {subscriptionId, tenantId?}, options?
       if (secondArg != null) {
@@ -197,7 +204,7 @@ export class AccountTools implements ArmpitCredentialProvider {
         }
       }
 
-      filterAccountsToSubscription = (accounts) => accounts.filter(a => a.id === subscription);
+      filterAccountsToSubscription = accounts => accounts.filter(a => a.id === subscription);
     } else {
       throw new Error("Arguments not supported");
     }
@@ -222,7 +229,7 @@ export class AccountTools implements ArmpitCredentialProvider {
       }
 
       return match;
-    }
+    };
 
     let account = findAccount([await this.show(options)]);
     if (account) {
@@ -231,19 +238,20 @@ export class AccountTools implements ArmpitCredentialProvider {
 
     // TODO: Consider refreshing and allowing a search of non-enabled accounts.
     //       That could come at a cost to performance though.
-    let knownAccounts = await this.list(options);
-    account = findAccount(knownAccounts);
+    account = findAccount(await this.list(options));
     if (account) {
-      await this.set(subscription);
+      await this.set(subscription, options);
       return account;
     }
 
     console.debug("No current accounts match. Starting interactive login.");
 
-    knownAccounts = await this.login(tenantId, options) ?? [];
-    account = findAccount(knownAccounts);
+    const accountResults = await this.login(tenantId, options);
+    if (accountResults) {
+      account = findAccount(accountResults);
+    }
 
-    if (!(account?.isDefault)) {
+    if (!account || !account.isDefault) {
       await this.set(subscription, options);
       account = await this.show(options);
     }
@@ -256,12 +264,12 @@ export class AccountTools implements ArmpitCredentialProvider {
    * @param tenantId The tenant to log into.
    * @returns An account if login is successful.
    */
-  async login(tenantId?: string, options?: AccountToolsOptions) : Promise<Account[] | null> {
+  async login(tenantId?: string, options?: AccountToolsOptions): Promise<Account[] | null> {
     const { abortSignal } = this.#getInvocationContext(options);
     abortSignal?.throwIfAborted();
 
     try {
-      let loginAccounts : Account[] | null;
+      let loginAccounts: Account[] | null;
       if (tenantId) {
         loginAccounts = await this.#invoker.strict<Account[]>`login --tenant ${tenantId}`;
       } else {
@@ -269,10 +277,9 @@ export class AccountTools implements ArmpitCredentialProvider {
       }
 
       return loginAccounts;
-
     } catch (invocationError) {
       const stderr = (<ExecaError>invocationError)?.stderr;
-      if (stderr && typeof stderr === "string" && (/User cancelled/i).test(stderr)) {
+      if (stderr && typeof stderr === "string" && /User cancelled/i.test(stderr)) {
         return null;
       }
 
@@ -308,12 +315,11 @@ export class AccountTools implements ArmpitCredentialProvider {
     const { abortSignal } = this.#getInvocationContext(options);
     abortSignal?.throwIfAborted();
 
-    let results : Location[];
+    let results: Location[];
     if (names != null && names.length > 0) {
-      const queryFilter = `[? contains([${names.map((n) => `'${n}'`).join(",")}],name)]`;
+      const queryFilter = `[? contains([${names.map(n => `'${n}'`).join(",")}],name)]`;
       results = await this.#invoker.strict<Location[]>`account list-locations --query ${queryFilter}`;
-    }
-    else {
+    } else {
       results = await this.#invoker.strict<Location[]>`account list-locations`;
     }
 

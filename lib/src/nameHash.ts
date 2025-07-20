@@ -4,8 +4,8 @@ import { CallableClassBase } from "./tsUtils.js";
 type EncodingKind = "alphanumeric" | "hex" | "numeric" | "alpha";
 
 interface NameHashOptions {
-  type?: EncodingKind,
-  defaultLength?: number
+  type?: EncodingKind;
+  defaultLength?: number;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
@@ -15,7 +15,6 @@ export interface NameHash {
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export class NameHash extends CallableClassBase {
-
   private static getDefaultLength(type: EncodingKind) {
     switch (type) {
       case "alphanumeric":
@@ -144,8 +143,8 @@ export class NameHash extends CallableClassBase {
 
   #values: string[];
   #options: {
-    type: EncodingKind,
-    defaultLength: number,
+    type: EncodingKind;
+    defaultLength: number;
   };
   #cached: string | null;
 
@@ -170,7 +169,7 @@ export class NameHash extends CallableClassBase {
 
     this.#options = {
       type,
-      defaultLength: Math.max(options?.defaultLength ?? NameHash.getDefaultLength(type), 1)
+      defaultLength: Math.max(options?.defaultLength ?? NameHash.getDefaultLength(type), 1),
     };
 
     this.#cached = null;
@@ -202,7 +201,7 @@ export class NameHash extends CallableClassBase {
   #buildHashText(minTextLength: number): string {
     let hashValue = "";
     let iteration = 1;
-    let tBuffer : Buffer | null = null;
+    let tBuffer: Buffer | null = null;
 
     const pseudoRandomKey = NameHash.calculateSha256Hash(this.#values);
 
@@ -214,14 +213,12 @@ export class NameHash extends CallableClassBase {
 
       tBuffer = NameHash.calculateSha256Hmac(pseudoRandomKey, hmacInputBuffer);
 
-      hashValue += this.#options.type === "hex"
-        ? NameHash.toTextHex(tBuffer)
-        : NameHash.toTextBaseN(tBuffer, this.#options.type);
+      hashValue +=
+        this.#options.type === "hex" ? NameHash.toTextHex(tBuffer) : NameHash.toTextBaseN(tBuffer, this.#options.type);
 
       iteration++;
     }
 
     return hashValue;
   }
-
 }
