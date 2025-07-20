@@ -7,7 +7,7 @@ import { CallableClassBase, mergeAbortSignals } from "./tsUtils.js";
 import { ExistingGroupLocationConflictError, GroupNotEmptyError } from "./errors.js";
 import {
   type ResourceSummary,
-  isNamedLocationDescriptor,
+  isNameWithLocationDescriptor,
   extractSubscriptionFromId,
   isSubscriptionId,
   type SubscriptionId,
@@ -39,11 +39,13 @@ interface GroupUpsertDescriptor {
   subscriptionId?: SubscriptionId
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export interface ResourceGroupTools {
   (name: string, location: string, subscriptionId?: SubscriptionId): Promise<AzGroupInterface>;
   (descriptor: GroupUpsertDescriptor): Promise<AzGroupInterface>;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export class ResourceGroupTools extends CallableClassBase implements ResourceGroupTools {
   #dependencies: GroupToolsDependencies;
   #invoker: AzCliInvoker;
@@ -136,7 +138,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
       throw new ExistingGroupLocationConflictError(group, location);
     }
 
-    if (!isNamedLocationDescriptor(group)) {
+    if (!isNameWithLocationDescriptor(group)) {
       throw new Error("Resource group is not correctly formed");
     }
 
@@ -152,7 +154,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
       subscriptionId = extractSubscriptionFromId(group.id);
     }
 
-    let toolContext = {
+    const generalToolOptions = {
       groupName,
       location,
       subscriptionId,
@@ -168,7 +170,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
     return Object.assign(cliResult, {
       strict: invoker.strict,
       lax: invoker.lax,
-      network: new NetworkTools(this.#dependencies, toolContext),
+      network: new NetworkTools(this.#dependencies, generalToolOptions),
       getCredential: (options?: ArmpitCredentialOptions) => {
         if (subscriptionId) {
           options = { subscription: subscriptionId, ...options };

@@ -17,8 +17,9 @@
     "postpack": "shx rm LICENSE && shx rm README.md",
     "watch": "npm-run-all -l clean --parallel watch:*",
     "watch:esm": "tsc -w",
+    "watch:test": "vitest watch",
     "lint": "tsc",
-    "test": "vitest"
+    "test": "vitest run"
   },
   "description": "Another resource manager programming interface toolkit.",
   "keywords": [
@@ -43,10 +44,12 @@
     "README.md"
   ],
   "devDependencies": {
-    "@types/node": "^24.0.3",
+    "@eslint/js": "^9.31.0",
+    "@types/node": "^24.0.15",
     "npm-run-all": "^4.1.5",
     "shx": "^0.4.0",
     "typescript": "^5.8.3",
+    "typescript-eslint": "^8.37.0",
     "vitest": "^3.2.4"
   },
   "dependencies": {

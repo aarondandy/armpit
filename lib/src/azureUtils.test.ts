@@ -3,7 +3,7 @@ import {
   isSubscriptionId,
   isSubscriptionIdOrName,
   isTenantId,
-  isNamedLocationDescriptor
+  isNameWithLocationDescriptor
 } from "./azureUtils.js"
 
 describe("isSubscriptionId", () => {
@@ -30,12 +30,12 @@ describe("isTenantId", () => {
   it("uuid text", () => expect(isTenantId("b485d697-af00-47ac-938d-56792f0af0c5")).toBe(true));
 });
 
-describe("isNamedLocationDescriptor", () => {
-  it("undefined", () => expect(isNamedLocationDescriptor(undefined)).toBe(false));
-  it("null", () => expect(isNamedLocationDescriptor(null)).toBe(false));
-  it("text", () => expect(isNamedLocationDescriptor("centralus")).toBe(false));
-  it("empty", () => expect(isNamedLocationDescriptor({})).toBe(false));
-  it("just name", () => expect(isNamedLocationDescriptor({name: "foo"})).toBe(false));
-  it("just location", () => expect(isNamedLocationDescriptor({location: "eastus2"})).toBe(false));
-  it("name and location", () => expect(isNamedLocationDescriptor({name: "foo", location: "eastus2"})).toBe(true));
+describe("isNameWithLocationDescriptor", () => {
+  it("undefined", () => expect(isNameWithLocationDescriptor(undefined)).toBe(false));
+  it("null", () => expect(isNameWithLocationDescriptor(null)).toBe(false));
+  it("text", () => expect(isNameWithLocationDescriptor("centralus")).toBe(false));
+  it("empty", () => expect(isNameWithLocationDescriptor({})).toBe(false));
+  it("just name", () => expect(isNameWithLocationDescriptor({name: "foo"})).toBe(false));
+  it("just location", () => expect(isNameWithLocationDescriptor({location: "eastus2"})).toBe(false));
+  it("name and location", () => expect(isNameWithLocationDescriptor({name: "foo", location: "eastus2"})).toBe(true));
 })

@@ -18,8 +18,9 @@ type AzTemplateExpressionItem =
   | Stringable;
 export type AzTemplateExpression = AzTemplateExpressionItem | readonly AzTemplateExpressionItem[];
 
-function isExecaResult(value: any): value is (ExecaResult | ExecaSyncResult) {
-  return !!(value && (value.command || value.stdout || value.stderr));
+function isExecaResult(value: unknown): value is (ExecaResult | ExecaSyncResult) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return !!(value && ((value as any).command || (value as any).stdout || (value as any).stderr));
 }
 
 interface InvokerOptions {
@@ -42,7 +43,7 @@ function ensureAzPrefix(templates: TemplateStringsArray) {
   return templates;
 }
 
-function extractWrappedResponsePropertyName(response: any): string | null {
+function extractWrappedResponsePropertyName(response: object): string | null {
   let propName: string | null = null;
   for (const key in response) {
     if (Object.hasOwn(response, key)) {
@@ -70,13 +71,15 @@ function extractWrappedResponsePropertyName(response: any): string | null {
   return null;
 }
 
-function simplifyContainerAppResult(result: any) {
-  if (result.properties == null) {
-    return result;
+function simplifyContainerAppResult(result: object) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (result != null && (result as any).properties != null) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { properties, ...rest } = result as any;
+    return { ...rest, ...properties };
   }
 
-  const { properties, ...rest } = result;
-  return { ...rest, ...properties };
+  return result;
 }
 
 export interface AzCliInvoker {

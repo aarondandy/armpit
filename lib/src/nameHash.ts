@@ -1,9 +1,5 @@
-import { createHash, createHmac } from "node:crypto";
+import { createHash, createHmac, type BinaryLike } from "node:crypto";
 import { CallableClassBase } from "./tsUtils.js";
-
-export interface NameHash {
-  (length?: number): string;
-}
 
 type EncodingKind = "alphanumeric" | "hex" | "numeric" | "alpha";
 
@@ -12,10 +8,12 @@ interface NameHashOptions {
   defaultLength?: number
 }
 
-function isNameHashOptions(value: any): value is NameHashOptions {
-  return value != null && typeof value === "object";
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
+export interface NameHash {
+  (length?: number): string;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export class NameHash extends CallableClassBase {
 
   private static getDefaultLength(type: EncodingKind) {
@@ -28,7 +26,7 @@ export class NameHash extends CallableClassBase {
     }
   }
 
-  private static calculateSha256Hash(values: any[]) {
+  private static calculateSha256Hash(values: (string | BinaryLike)[]) {
     const valuesHasher = createHash("sha256");
     for (const value of values) {
       if (typeof value === "string") {
@@ -53,7 +51,7 @@ export class NameHash extends CallableClassBase {
     return buffer;
   }
 
-  private static packBufferIntoInt(buffer: Buffer): BigInt {
+  private static packBufferIntoInt(buffer: Buffer) {
     let result = 0n;
     for (let i = 0; i < buffer.length; i++) {
       result |= BigInt(buffer[i]) << BigInt(i * 8);
@@ -112,12 +110,12 @@ export class NameHash extends CallableClassBase {
         break;
     }
 
-    let radixEncoded = NameHash.packBufferIntoInt(data).toString(radix);
+    const radixEncoded = NameHash.packBufferIntoInt(data).toString(radix);
 
     let result = "";
     // Sometimes we may get an extra high order character out of the number that
     // isn't fully covered by all the bits of data so it gets skipped.
-    let startIndex = Math.max(radixEncoded.length - resultLength, 0);
+    const startIndex = Math.max(radixEncoded.length - resultLength, 0);
     let i = radixEncoded.length - 1;
     if (type === "alpha") {
       for (; i >= startIndex; i--) {
@@ -158,27 +156,18 @@ export class NameHash extends CallableClassBase {
   constructor(...args: string[] | [...values: string[], options: NameHashOptions]) {
     super();
 
-    let options: NameHashOptions | null;
-    let values: string[];
+    let options: NameHashOptions | null = null;
 
-    if (args.length === 0) {
-      options = null;
-      values = [];
+    if (args.length > 0 && typeof args[args.length - 1] !== "string") {
+      this.#values = args.slice(0, args.length - 1) as string[];
+      options = args[args.length - 1] as NameHashOptions;
     } else {
-      const lastArg = args[args.length - 1];
-      if (isNameHashOptions(lastArg)) {
-        values = args.slice(0, args.length - 1) as string[];
-        options = lastArg;
-      }
-      else {
-        values = args as string[];
-        options = null;
-      }
+      this.#values = [...args] as string[];
+      options = null;
     }
 
     const type = options?.type ?? "alphanumeric";
 
-    this.#values = values;
     this.#options = {
       type,
       defaultLength: Math.max(options?.defaultLength ?? NameHash.getDefaultLength(type), 1)

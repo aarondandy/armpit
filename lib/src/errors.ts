@@ -7,7 +7,7 @@ export class ExistingGroupLocationConflictError extends Error {
 
   constructor(actual: {name?: string, location?: string}, expected: string);
   constructor(name: string, actual: string, expected: string);
-  constructor(actualOrName: {name?: string, location?: string} | string, secondArg: any, thirdArg?: any) {
+  constructor(actualOrName: {name?: string, location?: string} | string, secondArg: string, thirdArg?: string) {
     let groupName: string = "unknown";
     let actualLocation: string = "unknown";
     let expectedLocation: string = "unknown";

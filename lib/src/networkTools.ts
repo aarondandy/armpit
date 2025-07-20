@@ -34,8 +34,7 @@ interface CommonNetworkToolsOptions {
   abortSignal?: AbortSignal,
 }
 
-interface NetworkToolsConstructorOptions extends CommonNetworkToolsOptions {
-}
+type NetworkToolsConstructorOptions = CommonNetworkToolsOptions;
 
 interface CommonPrivateDnsOptions {
   groupName?: string | null,
@@ -43,8 +42,7 @@ interface CommonPrivateDnsOptions {
   abortSignal?: AbortSignal,
 }
 
-interface PrivateZoneUpsertOptions extends CommonPrivateDnsOptions {
-}
+type PrivateZoneUpsertOptions = CommonPrivateDnsOptions;
 
 interface PrivateZoneVnetLinkUpsertOptions extends CommonPrivateDnsOptions {
   virtualNetwork: { id?: string } | string,
@@ -224,7 +222,7 @@ export class NetworkTools {
   }
 
   async vnetGet(name: string, options?: CommonNetworkToolsOptions): Promise<VirtualNetwork | null> {
-    const { groupName, subscriptionId, abortSignal } = this.#getResourceContext(options);
+    const { groupName, subscriptionId, abortSignal } = this.#buildOperationContext(options);
     if (subscriptionId != null && groupName != null) {
       const client = this.getClient(subscriptionId);
       return await handleGet(client.virtualNetworks.get(groupName, name, {abortSignal}));
@@ -241,22 +239,24 @@ export class NetworkTools {
   }
 
   async vnetUpsert(name: string, options?: VnetUpsertOptions): Promise<VirtualNetwork> {
-    let { groupName, subscriptionId, location, abortSignal } = this.#getResourceContext(options);
-    if (groupName == null) {
+    const opContext = this.#buildOperationContext(options);
+    const { location } = opContext;
+    let subscriptionId = opContext.subscriptionId;
+    if (opContext.groupName == null) {
       throw new Error("A group name is required to perform network operations.")
     }
 
     let upsertRequired = false;
     let vnet = await this.vnetGet(name, options);
 
-    let desiredSubnets = options?.subnets?.map(descriptor => {
-      let {
+    const desiredSubnets = options?.subnets?.map(descriptor => {
+      const {
         delegations,
         networkSecurityGroup,
         ...descriptorRest
       } = descriptor;
 
-      let result = {
+      const result = {
         ...descriptorRest,
       } as Subnet; // a shallow clone should be safe enough
 
@@ -265,11 +265,8 @@ export class NetworkTools {
       }
 
       if (delegations) {
-        if (!Array.isArray(delegations)) {
-          delegations = [delegations];
-        }
-
-        result.delegations = delegations.map(d => typeof d === "string" ? { serviceName: d } : { ...d });
+        result.delegations = (Array.isArray(delegations) ? delegations : [delegations])
+          .map(d => typeof d === "string" ? { serviceName: d } : { ...d });
         assignDelegateNames(result.delegations);
       }
 
@@ -298,8 +295,8 @@ export class NetworkTools {
       }
 
       if (desiredSubnets != null) {
-        let existingSubnets = vnet.subnets == null ? [] : [... vnet.subnets];
-        let upsertSubnets: Subnet[] = [];
+        const existingSubnets = vnet.subnets == null ? [] : [... vnet.subnets];
+        const upsertSubnets: Subnet[] = [];
 
         for (let desiredIndex = 0; desiredIndex < desiredSubnets.length; ) {
           const desired = desiredSubnets[desiredIndex];
@@ -364,10 +361,10 @@ export class NetworkTools {
     if (upsertRequired) {
       const client = this.getClient(subscriptionId);
       vnet = await client.virtualNetworks.beginCreateOrUpdateAndWait(
-        groupName,
+        opContext.groupName,
         name,
         vnet,
-        {abortSignal}
+        {abortSignal: opContext.abortSignal}
       );
     }
 
@@ -375,7 +372,7 @@ export class NetworkTools {
   }
 
   async nsgGet(name: string, options?: CommonNetworkToolsOptions): Promise<NetworkSecurityGroup | null> {
-    const { groupName, subscriptionId, abortSignal } = this.#getResourceContext(options);
+    const { groupName, subscriptionId, abortSignal } = this.#buildOperationContext(options);
     if (subscriptionId != null && groupName != null) {
       const client = this.getClient(subscriptionId);
       return await handleGet(client.networkSecurityGroups.get(groupName, name, {abortSignal}));
@@ -392,8 +389,10 @@ export class NetworkTools {
   }
 
   async nsgUpsert(name: string, options?: NsgUpsertOptions): Promise<NetworkSecurityGroup> {
-    let { groupName, subscriptionId, location, abortSignal } = this.#getResourceContext(options);
-    if (groupName == null) {
+    const opOptions = this.#buildOperationContext(options);
+    const {location} = opOptions;
+    let subscriptionId = opOptions.subscriptionId;
+    if (opOptions.groupName == null) {
       throw new Error("A group name is required to perform NSG operations.");
     }
 
@@ -401,7 +400,7 @@ export class NetworkTools {
       throw new Error("Rules must be explicitly described when deleting unknown rules is requested");
     }
 
-    let desiredRules = options?.rules?.map(d => {
+    const desiredRules = options?.rules?.map(d => {
       const result = { ...d }; // a shallow clone should be safe enough
       assignMissingRequiredSecurityRuleOptions(result);
       return result as SecurityRule;
@@ -421,8 +420,8 @@ export class NetworkTools {
       }
 
       if (desiredRules) {
-        let existingRules = nsg.securityRules == null ? [] : [... nsg.securityRules];
-        let upsertRules: SecurityRule[] = [];
+        const existingRules = nsg.securityRules == null ? [] : [... nsg.securityRules];
+        const upsertRules: SecurityRule[] = [];
 
         for (let desiredIndex = 0; desiredIndex < desiredRules.length; ) {
           const desired = desiredRules[desiredIndex];
@@ -477,10 +476,10 @@ export class NetworkTools {
     if (upsertRequired) {
       const client = this.getClient(subscriptionId);
       nsg = await client.networkSecurityGroups.beginCreateOrUpdateAndWait(
-        groupName,
+        opOptions.groupName,
         name,
         nsg,
-        {abortSignal}
+        {abortSignal: opOptions.abortSignal}
       );
     }
 
@@ -488,7 +487,7 @@ export class NetworkTools {
   }
 
   async privateZoneGet(name: string, options?: CommonPrivateDnsOptions): Promise<PrivateZone | null> {
-    const { groupName, subscriptionId, abortSignal } = this.#getResourceContext(options);
+    const { groupName, subscriptionId, abortSignal } = this.#buildOperationContext(options);
     if (subscriptionId != null && groupName != null) {
       const client = this.getPrivateZoneClient(subscriptionId);
       return await handleGet(client.privateZones.get(groupName, name, {abortSignal}));
@@ -505,7 +504,7 @@ export class NetworkTools {
   }
 
   async privateZoneUpsert(name: string, options?: PrivateZoneUpsertOptions): Promise<PrivateZone> {
-    let { groupName, subscriptionId, abortSignal } = this.#getResourceContext(options);
+    const { groupName, subscriptionId, abortSignal } = this.#buildOperationContext(options);
     if (groupName == null) {
       throw new Error("A group name is required to perform DNS zone operations");
     }
@@ -525,7 +524,7 @@ export class NetworkTools {
   }
 
   async privateZoneVnetLinkGet(zoneName: string, name: string, options?: CommonNetworkToolsOptions) {
-    let { groupName, subscriptionId, abortSignal } = this.#getResourceContext(options);
+    const { groupName, subscriptionId, abortSignal } = this.#buildOperationContext(options);
     if (subscriptionId != null && groupName != null) {
       const client = this.getPrivateZoneClient(subscriptionId);
       return await handleGet(client.virtualNetworkLinks.get(groupName, zoneName, name, {abortSignal}));
@@ -542,7 +541,7 @@ export class NetworkTools {
   }
 
   async privateZoneVnetLinkUpsert(zoneName: string, name: string, options: PrivateZoneVnetLinkUpsertOptions) {
-    let { groupName, subscriptionId, abortSignal } = this.#getResourceContext(options);
+    const { groupName, subscriptionId, abortSignal } = this.#buildOperationContext(options);
     if (groupName == null) {
       throw new Error("A group name is required to perform DNS zone link operations");
     }
@@ -624,12 +623,12 @@ export class NetworkTools {
       options);
   }
 
-  #getResourceContext(options?: CommonNetworkToolsOptions | null) {
+  #buildOperationContext(options?: CommonNetworkToolsOptions | null) {
     return {
       groupName: options?.groupName ?? this.#options.groupName ?? null,
       subscriptionId: options?.subscriptionId ?? this.#options.subscriptionId ?? null,
       location: options?.location ?? this.#options.location ?? null,
       abortSignal: mergeAbortSignals(options?.abortSignal, this.#options.abortSignal) ?? undefined,
-    }
+    };
   }
 }

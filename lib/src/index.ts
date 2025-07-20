@@ -44,12 +44,11 @@ const az = (function(): AzGlobalInterface {
       abortSignal: abortController.signal
     })
   });
-  let result = Object.assign(cliResult, {
+  return Object.assign(cliResult, {
     strict: invoker.strict,
     lax: invoker.lax,
     getCredential: accountTools.getCredential,
   });
-  return result;
 })();
 
 export default az;

@@ -23,7 +23,7 @@ interface AccountToolsOptions {
   abortSignal?: AbortSignal,
 }
 
-interface AccountToolsConstructorOptions extends AccountToolsOptions { }
+type AccountToolsConstructorOptions = AccountToolsOptions;
 
 interface AccountToolsDependencies {
   invoker: AzCliInvoker;
@@ -33,6 +33,11 @@ interface AccountToolsDependencies {
 interface AccountListOptions extends AccountToolsOptions {
   all?: boolean,
   refresh?: boolean,
+}
+
+interface AccountSelectionCriteria {
+  subscriptionId: SubscriptionId,
+  tenantId?: TenantId
 }
 
 /**
@@ -142,8 +147,8 @@ export class AccountTools implements ArmpitCredentialProvider {
    * Sets the active account to the given subscription or initiates a login if required.
    * @param criteria The selection criteria for the account.
    */
-  async setOrLogin(criteria: {subscriptionId: SubscriptionId, tenantId?: TenantId}, options?: AccountToolsOptions): Promise<Account | null>;
-  async setOrLogin(criteria: any, secondArg?: any, thirdArg?: any): Promise<Account | null> {
+  async setOrLogin(criteria: AccountSelectionCriteria, options?: AccountToolsOptions): Promise<Account | null>;
+  async setOrLogin(criteria: SubscriptionIdOrName | AccountSelectionCriteria, secondArg?: TenantId | AccountToolsOptions, thirdArg?: AccountToolsOptions): Promise<Account | null> {
     let subscription: SubscriptionId | SubscriptionIdOrName;
     let tenantId: string | undefined;
     let options: AccountToolsOptions | undefined;
@@ -175,7 +180,7 @@ export class AccountTools implements ArmpitCredentialProvider {
     } else if (criteria.subscriptionId != null) {
       // overload: {subscriptionId, tenantId?}, options?
       if (secondArg != null) {
-        options = secondArg;
+        options = secondArg as AccountToolsOptions;
       }
 
       if (isSubscriptionId(criteria.subscriptionId)) {

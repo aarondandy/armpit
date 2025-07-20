@@ -67,7 +67,7 @@ export function buildCliCredential(invokers: AzCliInvoker, options?: ArmpitCrede
 
     const result = await invokers.strict<AzCliAccessToken>`account get-access-token ${args}`;
 
-    let expiresOn = Number.parseInt(result.expires_on as any, 10) * 1000;
+    let expiresOn = (typeof result.expires_on ==="number" ? result.expires_on : Number.parseInt(result.expires_on, 10)) * 1000;
     if (isNaN(expiresOn)) {
       expiresOn = new Date(result.expiresOn).getTime();
     }
@@ -76,7 +76,7 @@ export function buildCliCredential(invokers: AzCliInvoker, options?: ArmpitCrede
       throw new Error("Failed to extract token expiration");
     }
 
-    let tokenType = result.tokenType ?? "Bearer";
+    const tokenType = result.tokenType ?? "Bearer";
     if (tokenType !== "Bearer") {
       throw new Error(`Token type ${tokenType} is not supported`);
     }
@@ -134,7 +134,7 @@ export class ArmpitCliCredentialFactory {
       throw new Error("An invoker is required to build a credential");
     }
 
-    let cacheKeyValue: string | null = options != null && (options.subscription != null || options.tenantId != null)
+    const cacheKeyValue: string | null = options != null && (options.subscription != null || options.tenantId != null)
       ? JSON.stringify(options)
       : null;
 
@@ -145,7 +145,7 @@ export class ArmpitCliCredentialFactory {
       }
     }
 
-    let credential = buildCliCredential(invoker, options);
+    const credential = buildCliCredential(invoker, options);
 
     if (cacheKeyValue && options) {
       this.#cache.push({options, credential});

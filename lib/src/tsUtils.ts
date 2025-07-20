@@ -1,12 +1,13 @@
 export abstract class CallableClassBase {
   constructor() {
-    const closure = function(...args: any[]) {
+    const closure = function(...args: unknown[]) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return (closure as any as CallableClassBase).fnImpl(...args);
     }
     return Object.setPrototypeOf(closure, new.target.prototype);
   }
 
-  protected abstract fnImpl(...args: any[]): any;
+  protected abstract fnImpl(...args: unknown[]): unknown;
 }
 
 export function isStringValueOrValueArrayEqual<T extends string | null | undefined>(

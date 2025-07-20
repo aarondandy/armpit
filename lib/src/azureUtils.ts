@@ -39,10 +39,15 @@ export function isTenantId(value: unknown): value is TenantId {
   return uuidValidate(value);
 }
 
-export function isNamedLocationDescriptor<T extends any>(resource?: T): resource is T & { name: string, location: string } {
+export interface NameWithLocationDescriptor {
+  name: string,
+  location: string,
+}
+
+export function isNameWithLocationDescriptor<T>(resource?: T): resource is T & NameWithLocationDescriptor {
   return resource != null
-    && typeof (resource as any).name === "string"
-    && typeof (resource as any).location === "string";
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    && typeof (resource as any).name === "string" && typeof (resource as any).location === "string";
 }
 
 // type VirtualMachineCreateResult = {

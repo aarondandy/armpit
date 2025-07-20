@@ -28,7 +28,7 @@ export interface SubscriptionBoundServiceClientConstructor<TClient extends Servi
 
 export class ManagementClientFactory {
   #credentialFactory: ArmpitCliCredentialFactory;
-  #cache: { constructor: any, subscriptionId: SubscriptionId, options?: ServiceClientOptions, instance: any }[] = [];
+  #cache: { constructor: SubscriptionBoundServiceClientConstructor<ServiceClientLike>, subscriptionId: SubscriptionId, options?: ServiceClientOptions, instance: ServiceClientLike }[] = [];
 
   constructor(credentialFactory: ArmpitCliCredentialFactory) {
     this.#credentialFactory = credentialFactory;
