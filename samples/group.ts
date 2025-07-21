@@ -34,7 +34,7 @@ console.log(`group ${rg.name} exists in ${rg.location}:`);
 await rg`network nsg create -n foo`;
 
 // The same applies to a show command on the rg instance too:
-let nsg : { name: string };
+let nsg: { name: string };
 nsg = await rg`network nsg show -n foo`;
 console.log("NSG from rg:", nsg.name);
 
@@ -67,7 +67,9 @@ try {
   throw new Error("This should be unreachable because of the incorrect group location above");
 } catch (err: any) {
   if (err instanceof ExistingGroupLocationConflictError) {
-    console.log(`Oops! The group ${err.groupName} already exists in ${err.actualLocation} so referencing it in ${err.expectedLocation} failed`);
+    console.log(
+      `Oops! The group ${err.groupName} already exists in ${err.actualLocation} so referencing it in ${err.expectedLocation} failed`,
+    );
   } else {
     throw err;
   }
@@ -90,9 +92,9 @@ try {
 // Deleting this resource should make the group empty again
 console.log(`Deleting NSG ${nsg.name} ...`);
 await rg<void>`network nsg delete -n ${nsg.name}`;
-console.log(`Was NSG ${nsg.name} deleted? ${!await rg.lax`network nsg show -n ${nsg.name}`}`);
+console.log(`Was NSG ${nsg.name} deleted? ${!(await rg.lax`network nsg show -n ${nsg.name}`)}`);
 
 // Now try that delete again
 console.log(`Deleting group...`);
 await az.group.delete("group-testing");
-console.log(`Was group deleted? ${!await az.group.exists("group-testing")}`)
+console.log(`Was group deleted? ${!(await az.group.exists("group-testing"))}`);

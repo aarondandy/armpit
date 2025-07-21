@@ -17,7 +17,7 @@ const myIp = fetch("https://api.ipify.org/").then(r => r.text());
 let myUser = await az.account.showSignedInUser();
 
 const rg = await az.group(`samples-${targetLocation}`, targetLocation);
-const resourceHash = new NameHash(targetEnvironment.subscriptionId, { defaultLength: 6 }).concat(rg.name);
+const resourceHash = new NameHash(targetEnvironment.subscriptionId, rg.name, { defaultLength: 6 });
 
 // -------
 // Network
@@ -35,7 +35,7 @@ const vnet = rg.network.vnetUpsert(`vnet-sample-${rg.location}`, {
       addressPrefix: "10.10.30.0/24",
       delegations: "Microsoft.App/environments",
     },
-  ]
+  ],
 });
 vnet.then(vnet => console.log(`[net] vnet ${vnet.name} ${vnet.addressSpace?.addressPrefixes?.[0]}`));
 const getSubnet = async (name: string) => (await vnet).subnets!.find(s => s.name === name)!;
@@ -43,14 +43,11 @@ const getSubnet = async (name: string) => (await vnet).subnets!.find(s => s.name
 const zonePlDb = rg.network.privateZoneUpsert("privatelink.database.windows.net");
 zonePlDb.then(zone => console.log(`[net] dns ${zone.name}`));
 
-const link = (async () => rg.network.privateZoneVnetLinkUpsert(
-  (await zonePlDb).name!,
-  `pdlink-sampledb-${rg.location}`,
-  {
+const link = (async () =>
+  rg.network.privateZoneVnetLinkUpsert((await zonePlDb).name!, `pdlink-sampledb-${rg.location}`, {
     virtualNetwork: await vnet,
     registrationEnabled: false,
-  }
-))();
+  }))();
 link.then(link => console.log(`[net] dns link ${link.name} ready`));
 
 // ----
@@ -74,15 +71,14 @@ const runOnDb = async (action: (pool: mssql.ConnectionPool) => Promise<void>) =>
   try {
     await pool.connect();
     await action(pool);
-  }
-  finally {
+  } finally {
     await pool.close();
   }
 };
-runOnDb(async (pool) => {
+runOnDb(async pool => {
   const statements = [
     "IF OBJECT_ID('NumberSearch', 'U') IS NULL CREATE TABLE NumberSearch ([Value] BIGINT NOT NULL);",
-    "IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_NumberSearch_Value' AND object_id = OBJECT_ID('NumberSearch')) CREATE CLUSTERED INDEX IX_NumberSearch_Value ON NumberSearch ([Value]);"
+    "IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_NumberSearch_Value' AND object_id = OBJECT_ID('NumberSearch')) CREATE CLUSTERED INDEX IX_NumberSearch_Value ON NumberSearch ([Value]);",
   ];
   await pool.request().query(statements.join("\n"));
   console.log("[db] schema defined");
@@ -120,12 +116,9 @@ containerAppEnv.then(appEnv => console.log(`[app] app environment ${appEnv.name}
 
 // TODO: reduce the line breaks that come from containerapp commands. Likely due to a progress spinner.
 
-const app = (async() => {
+const app = (async () => {
   const sqlConnectionString = `Server=${(await dbServer).name}.database.windows.net;Database=${(await db).name};Authentication=Active Directory Managed Identity;`;
-  const envVars = [
-    `ConnectionStrings__MyDatabase=${sqlConnectionString}`,
-    "FOO=BAR",
-  ];
+  const envVars = [`ConnectionStrings__MyDatabase=${sqlConnectionString}`, "FOO=BAR"];
 
   // TODO: Remaking the app each time causes issues. An upsert would work much better.
   const app = await rg<ContainerApp>`containerapp create
@@ -137,11 +130,13 @@ const app = (async() => {
   console.log(`[app] ${app.name} recreated`);
 
   // permission app to DB
-  await runOnDb(async (pool) => {
+  await runOnDb(async pool => {
     const username = app.name;
     const statements = [
       `IF NOT EXISTS (SELECT 1 FROM sys.sysusers WHERE [name] = '${username}') CREATE USER [${username}] FROM EXTERNAL PROVIDER;`,
-      ...["db_datareader", "db_datawriter", "db_ddladmin"].map(role => `EXEC sp_addrolemember [${role}],[${username}];`),
+      ...["db_datareader", "db_datawriter", "db_ddladmin"].map(
+        role => `EXEC sp_addrolemember [${role}],[${username}];`,
+      ),
     ];
     await pool.request().query(statements.join("\n"));
   });

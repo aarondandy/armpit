@@ -1,17 +1,8 @@
 import path from "node:path";
 import { az, NameHash } from "armpit";
 import { loadMyEnvironment, loadState, saveState } from "./utils/state.js";
-import type {
-  ApplicationSecurityGroup,
-  PublicIPAddress,
-  NetworkInterface,
-} from "@azure/arm-network";
-import type {
-  Disk,
-  VirtualMachine,
-  VirtualMachineExtension,
-  RunCommandResult,
-} from "@azure/arm-compute";
+import type { ApplicationSecurityGroup, PublicIPAddress, NetworkInterface } from "@azure/arm-network";
+import type { Disk, VirtualMachine, VirtualMachineExtension, RunCommandResult } from "@azure/arm-compute";
 
 // --------------------------
 // Environment & Subscription
@@ -20,7 +11,7 @@ import type {
 const targetEnvironment = await loadMyEnvironment("samples");
 const targetLocation = targetEnvironment.defaultLocation ?? "centralus";
 await az.account.setOrLogin(targetEnvironment);
-const state = await loadState<{serverName?: string}>();
+const state = await loadState<{ serverName?: string }>();
 
 const myIp = fetch("https://api.ipify.org/").then(r => r.text());
 const myUser = await az.account.showSignedInUser();
@@ -38,45 +29,50 @@ const resourceHash = new NameHash(targetEnvironment.subscriptionId).concat(rg.na
 
 const asgs = {
   ssh: rg<ApplicationSecurityGroup>`network asg create -n asg-ssh`,
-  factorio: rg<ApplicationSecurityGroup>`network asg create -n asg-factorio`
-}
+  factorio: rg<ApplicationSecurityGroup>`network asg create -n asg-factorio`,
+};
 
 const nsg = rg.network.nsgUpsert(`nsg-videogames-${rg.location}`, {
   rules: [
     {
       name: "FactoryMustGrow",
-      direction: "Inbound", priority: 200,
-      access: "Allow", protocol: "Udp",
+      direction: "Inbound",
+      priority: 200,
+      access: "Allow",
+      protocol: "Udp",
       destinationApplicationSecurityGroups: [await asgs.factorio],
       destinationPortRange: "34197",
     },
     {
       name: "ManageFromWorkstation",
-      direction: "Inbound", priority: 1000,
-      access: "Allow", protocol: "Tcp",
+      direction: "Inbound",
+      priority: 1000,
+      access: "Allow",
+      protocol: "Tcp",
       sourceAddressPrefix: await myIp,
       destinationApplicationSecurityGroups: [await asgs.ssh],
       destinationPortRange: "22",
-    }
-  ]
+    },
+  ],
 });
 nsg.then(nsg => console.log(`[net] nsg ${nsg.name}`));
 
-const vnet = (async () => rg.network.vnetUpsert(`vnet-videogames-${rg.location}`, {
-  addressPrefix: "10.64.0.0/16",
-  subnets: [
-    {
-      name: "default",
-      networkSecurityGroup: await nsg,
-      addressPrefix: "10.64.0.0/24",
-    },
-    {
-      name: "vms",
-      networkSecurityGroup: await nsg,
-      addressPrefix: "10.64.8.0/24",
-    }
-  ]
-}))();
+const vnet = (async () =>
+  rg.network.vnetUpsert(`vnet-videogames-${rg.location}`, {
+    addressPrefix: "10.64.0.0/16",
+    subnets: [
+      {
+        name: "default",
+        networkSecurityGroup: await nsg,
+        addressPrefix: "10.64.0.0/24",
+      },
+      {
+        name: "vms",
+        networkSecurityGroup: await nsg,
+        addressPrefix: "10.64.8.0/24",
+      },
+    ],
+  }))();
 vnet.then(vnet => console.log(`[net] vnet ${vnet.name} ${vnet.addressSpace?.addressPrefixes?.[0]}`));
 const subnetVms = vnet.then(vnet => vnet.subnets!.find(s => s.name === "vms")!);
 
@@ -96,8 +92,7 @@ pip.then(pip => console.log(`[vm] public ip ${pip.dnsSettings?.fqdn} (${pip.ipAd
 
 const nic = (async () => rg<NetworkInterface>`network nic create -n nic-${state.serverName}
   --subnet ${(await subnetVms).id} --public-ip-address ${(await pip).name}
-  --network-security-group ${(await nsg).name} --asgs ${(await asgs.ssh).name} ${(await asgs.factorio).name}`
-)();
+  --network-security-group ${(await nsg).name} --asgs ${(await asgs.ssh).name} ${(await asgs.factorio).name}`)();
 nic.then(nic => console.log(`[vm] nic ${nic.ipConfigurations?.[0]?.privateIPAddress}`));
 
 const osDisk = rg<Disk>`disk create -n os-${state.serverName}
@@ -127,15 +122,12 @@ const vmExtensions = (async () => {
 })();
 const vmConfig = (async () => {
   const scriptPath = path.join(import.meta.dirname, "factorio.init.sh");
-  const result = await rg<RunCommandResult>`vm run-command invoke --command-id RunShellScript -n ${(await vm).name} --scripts ${"@" + scriptPath}`;
+  const result =
+    await rg<RunCommandResult>`vm run-command invoke --command-id RunShellScript -n ${(await vm).name} --scripts ${"@" + scriptPath}`;
   console.log(`[vm] init script status: ${result.value?.map(s => s.displayStatus)}`);
 })();
 
-await Promise.all([
-  vmAuth,
-  vmExtensions,
-  vmConfig,
-]);
+await Promise.all([vmAuth, vmExtensions, vmConfig]);
 
 console.log(`
 The server is ready and the factory must grow.

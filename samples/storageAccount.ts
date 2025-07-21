@@ -18,29 +18,31 @@ console.log(`storage ready ${sa.name}`);
 
 // Give ourselves access
 const user = await az.account.showSignedInUser();
-await az`role assignment create --assignee ${user.userPrincipalName} --role ${"Storage Account Contributor"} --scope ${sa.id}`
+await az`role assignment create --assignee ${user.userPrincipalName} --role ${"Storage Account Contributor"} --scope ${sa.id}`;
 
 // Ensure storage containers exist and upload content to each in parallel
 const sampleContainers = [
   { container: "stuff", file: "something" },
   { container: "things", file: "timestamp" },
 ];
-const allUrls = await Promise.all(sampleContainers.map(async ({ container: containerName, file: blobFilePath }) => {
-  // Ensure the container exists
-  const container = await rg<BlobContainer>`storage container-rm create
+const allUrls = await Promise.all(
+  sampleContainers.map(async ({ container: containerName, file: blobFilePath }) => {
+    // Ensure the container exists
+    const container = await rg<BlobContainer>`storage container-rm create
     --name ${containerName} --storage-account ${sa.name} --public-access blob`;
-  console.log(`container ${sa.primaryEndpoints?.blob}${container.name} created`);
+    console.log(`container ${sa.primaryEndpoints?.blob}${container.name} created`);
 
-  // Upload a blob
-  const blobUrl = `${sa.primaryEndpoints?.blob}${container.name}/${blobFilePath}`;
-  const blob = await rg<any>`storage blob upload
+    // Upload a blob
+    const blobUrl = `${sa.primaryEndpoints?.blob}${container.name}/${blobFilePath}`;
+    const blob = await rg<any>`storage blob upload
     --name ${blobFilePath} --container-name ${container.name} --account-name ${sa.name}
     --data ${`timestamp ${new Date()}`} --content-type text/plain --overwrite true`;
-  console.log(`uploaded blob ${blobUrl}: etag ${blob.etag}`);
+    console.log(`uploaded blob ${blobUrl}: etag ${blob.etag}`);
 
-  // Download the content
-  console.log(`download blob ${blobUrl}: ${await fetch(blobUrl).then(b => b.text())}`);
-  return blobUrl;
-}));
+    // Download the content
+    console.log(`download blob ${blobUrl}: ${await fetch(blobUrl).then(b => b.text())}`);
+    return blobUrl;
+  }),
+);
 
 console.log("All blob URLs:", allUrls);

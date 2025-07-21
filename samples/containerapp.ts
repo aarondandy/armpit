@@ -11,7 +11,7 @@ const targetLocation = targetEnvironment.defaultLocation ?? "centralus";
 await az.account.setOrLogin(targetEnvironment);
 
 const rg = await az.group(`samples-${targetLocation}`, targetLocation, targetEnvironment.subscriptionId);
-const resourceHash = new NameHash(targetEnvironment.subscriptionId, { defaultLength: 6 }).concat(rg.name);
+const resourceHash = new NameHash(targetEnvironment.subscriptionId, rg.name, { defaultLength: 6 });
 
 const appEnv = await rg<ManagedEnvironment>`containerapp env create
   --name appenv-sample-${resourceHash}-${rg.location}
@@ -20,17 +20,13 @@ console.log(`[app] app environment ${appEnv.name} ready via ${appEnv.staticIp}`)
 
 // TODO: reduce the line breaks that come from containerapp commands. Likely due to a progress spinner.
 
-const envVars = [
-  "FOO=BAR",
-];
+const envVars = ["FOO=BAR"];
 
 // Remaking the app each time causes issues. An upsert would work much better.
 const app = await rg<ContainerApp>`containerapp create
   --name app-aspnetsample-${resourceHash}-${rg.location} --environment ${appEnv.id}
   --image ${"mcr.microsoft.com/dotnet/samples:aspnetapp"}
-  --ingress external --target-port 8080
-  --env-vars ${envVars}
-  --system-assigned`;
+  --ingress external --target-port 8080 --env-vars ${envVars} --system-assigned`;
 console.log(`[app] ${app.name} recreated`);
 
 await rg`containerapp update --name ${app.name} --replace-env-vars ${envVars}`;

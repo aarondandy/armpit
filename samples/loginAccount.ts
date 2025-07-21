@@ -1,10 +1,12 @@
 import yargs from "yargs";
 import az, { type Account } from "armpit";
 
-const argv = await yargs(process.argv.slice(2)).option({
-  s: { type: "string", demandOption: false },
-  t: { type: "string", demandOption: false },
-}).parseAsync();
+const argv = await yargs(process.argv.slice(2))
+  .option({
+    s: { type: "string", demandOption: false },
+    t: { type: "string", demandOption: false },
+  })
+  .parseAsync();
 
 let currentAccount: Account | null;
 if (argv.s) {

@@ -20,7 +20,7 @@ const queue = await rg<SBQueue>`servicebus queue create --name stuff --namespace
 console.log(`${namespace.name}/queues/${queue.name} created`);
 
 for (const roleName of ["Azure Service Bus Data Receiver", "Azure Service Bus Data Sender"]) {
-  await az`role assignment create --assignee ${myUser.userPrincipalName} --role ${roleName} --scope ${namespace.id}`
+  await az`role assignment create --assignee ${myUser.userPrincipalName} --role ${roleName} --scope ${namespace.id}`;
 }
 
 const connectionString = `Endpoint=sb://${new URL(namespace.serviceBusEndpoint!).host};`;
@@ -32,7 +32,7 @@ try {
     const sender = client.createSender(queue.name!);
     try {
       for (const noise of ["chirp", "tweet", "squawk"]) {
-        const batch = Array.from({length: 5}, () => ({body: noise}));
+        const batch = Array.from({ length: 5 }, () => ({ body: noise }));
         await sender.sendMessages(batch);
         console.log(`sent ${batch.length} ${noise} messages`);
       }
@@ -42,11 +42,11 @@ try {
   })();
 
   const receiveMessages = async () => {
-    const receiver = client.createReceiver(queue.name!, { receiveMode: "peekLock", });
+    const receiver = client.createReceiver(queue.name!, { receiveMode: "peekLock" });
     try {
       receiver.subscribe({
-        processMessage: async (m) => console.log("received", m.enqueuedTimeUtc, m.body),
-        processError: async (e) => {
+        processMessage: async m => console.log("received", m.enqueuedTimeUtc, m.body),
+        processError: async e => {
           if ((e?.error as ServiceBusError)?.code === "UnauthorizedAccess") {
             console.log("Unauthorized access probably means things are still warming up. Hopefully...", e);
           } else {
@@ -57,14 +57,13 @@ try {
 
       await senderPromise; // Wait until sending has completed...
       await sleep(3000); // and then some more because things can be slow.
-
     } finally {
       await receiver.close();
     }
   };
   const receivers = Array.from({ length: 3 }, () => receiveMessages());
 
-  await Promise.all([ ...receivers, senderPromise ]);
+  await Promise.all([...receivers, senderPromise]);
 } finally {
   await client.close();
 }
