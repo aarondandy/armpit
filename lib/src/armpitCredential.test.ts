@@ -11,12 +11,7 @@ describe("ArmpitCredential getToken", () => {
   });
 
   const strictMock = vi.fn();
-  const fakeInvoker = {
-    strict: strictMock,
-    lax: vi.fn().mockImplementation(() => {
-      throw new Error("Not supported");
-    }),
-  };
+  const fakeInvoker = Object.assign(strictMock, {});
 
   it("get token in default context", async () => {
     strictMock.mockResolvedValue({

@@ -3,6 +3,7 @@ import { ResourceManagementClient, type ResourceGroup } from "@azure/arm-resourc
 import { constructId } from "./azureUtils.js";
 import { ManagementClientFactory } from "./azureSdkUtils.js";
 import { ResourceGroupTools } from "./resourceGroupTools.js";
+import { isTemplateStringArray } from "./tsUtils.js";
 
 describe("upsert group", () => {
   const subscriptionId = "41a80a8e-6547-414a-9d34-ecfbc0f7728d";
@@ -19,10 +20,7 @@ describe("upsert group", () => {
 
   const strictMock = vi.fn();
   const laxMock = vi.fn();
-  const fakeInvoker = {
-    strict: strictMock,
-    lax: laxMock,
-  };
+  const fakeInvoker = Object.assign((...args) => (isTemplateStringArray(args[0]) ? strictMock(...args) : laxMock), {});
 
   const sharedDependencies = {
     invoker: fakeInvoker,
