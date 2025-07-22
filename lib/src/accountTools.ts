@@ -46,7 +46,7 @@ interface AccountSelectionCriteria {
  * Accounts roughly approximate a subscription accessed by a user via the Azure CLI.
  */
 export class AccountTools implements ArmpitCredentialProvider {
-  /** Invokers associated with a global Azure CLI shell */
+  /** Invoker associated with a global Azure CLI shell */
   #invoker: AzCliInvoker;
   #credentialFactory: ArmpitCliCredentialFactory;
   #options: AccountToolsOptions;

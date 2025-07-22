@@ -29,7 +29,7 @@ console.log(`group ${rg.name} exists in ${rg.location}:`);
 // group name explicitly using --resource-group or -g on most commands.
 //
 // In addition to the default group name, take note that the az prefix is not
-// added on to the command. The invokers add that automatically before invoking
+// added on to the command. An invoker adds that automatically before invoking
 // the Azure CLI command.
 await rg`network nsg create -n foo`;
 

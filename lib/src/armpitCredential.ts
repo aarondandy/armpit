@@ -25,13 +25,13 @@ export interface ArmpitTokenContext {
  * Provides access tokens from the current Azure CLI invoker.
  * @remarks
  * This class is intended to be instantiated internally and exposed as a TokenCredential.
- * The implementation is similar to AzureCliCredential but using armpit invokers.
+ * The implementation is similar to AzureCliCredential but using an armpit invoker.
  */
 export interface ArmpitCredential extends TokenCredential {
   getLastTokenContext(): ArmpitTokenContext | null;
 }
 
-export function buildCliCredential(invokers: AzCliInvoker, options?: ArmpitCredentialOptions): ArmpitCredential {
+export function buildCliCredential(invoker: AzCliInvoker, options?: ArmpitCredentialOptions): ArmpitCredential {
   const defaultTenantId = options?.tenantId;
   if (defaultTenantId && !isTenantId(defaultTenantId)) {
     throw new Error("Invalid tenant ID.");
@@ -64,7 +64,7 @@ export function buildCliCredential(invokers: AzCliInvoker, options?: ArmpitCrede
       args.push("--subscription", defaultSubscription);
     }
 
-    const result = await invokers<AzCliAccessToken>`account get-access-token ${args}`;
+    const result = await invoker<AzCliAccessToken>`account get-access-token ${args}`;
 
     let expiresOnMs: number | null = null;
 
