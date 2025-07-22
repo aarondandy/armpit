@@ -91,8 +91,10 @@ try {
 
 // Deleting this resource should make the group empty again
 console.log(`Deleting NSG ${nsg.name} ...`);
-await rg<void>`network nsg delete -n ${nsg.name}`;
-console.log(`Was NSG ${nsg.name} deleted? ${!(await rg.lax`network nsg show -n ${nsg.name}`)}`);
+await rg({ allowBlanks: true })<void>`network nsg delete -n ${nsg.name}`;
+console.log(
+  `Was NSG ${nsg.name} deleted? ${(await rg({ allowBlanks: true })`network nsg show -n ${nsg.name}`) == null}`,
+);
 
 // Now try that delete again
 console.log(`Deleting group...`);

@@ -1,7 +1,7 @@
 import type { ExecaError } from "execa";
 import type { Location } from "@azure/arm-resources-subscriptions";
 import { mergeAbortSignals } from "./tsUtils.js";
-import type { AzCliInvoker } from "./azCliUtils.js";
+import type { AzCliInvoker } from "./azCliInvoker.js";
 import {
   type Account,
   type SubscriptionIdOrName,
@@ -68,7 +68,7 @@ export class AccountTools implements ArmpitCredentialProvider {
     abortSignal?.throwIfAborted();
 
     try {
-      return await this.#invoker.lax<Account>`account show`;
+      return await this.#invoker({ allowBlanks: true })<Account>`account show`;
     } catch (invocationError) {
       const stderr = (<ExecaError>invocationError)?.stderr;
       if (stderr && typeof stderr === "string" && /az login|az account set/i.test(stderr)) {
@@ -88,7 +88,7 @@ export class AccountTools implements ArmpitCredentialProvider {
     const { abortSignal } = this.#getInvocationContext(options);
     abortSignal?.throwIfAborted();
 
-    return await this.#invoker.strict<SimpleAdUser>`ad signed-in-user show`;
+    return await this.#invoker<SimpleAdUser>`ad signed-in-user show`;
   }
 
   /**
@@ -114,10 +114,11 @@ export class AccountTools implements ArmpitCredentialProvider {
     }
 
     let results: Account[] | null;
+    const invoker = this.#invoker({ allowBlanks: true });
     if (args && args.length > 0) {
-      results = await this.#invoker.lax<Account[]>`account list ${args}`;
+      results = await invoker<Account[]>`account list ${args}`;
     } else {
-      results = await this.#invoker.lax<Account[]>`account list`;
+      results = await invoker<Account[]>`account list`;
     }
 
     return results ?? [];
@@ -133,7 +134,7 @@ export class AccountTools implements ArmpitCredentialProvider {
     const { abortSignal } = this.#getInvocationContext(options);
     abortSignal?.throwIfAborted();
 
-    await this.#invoker.lax<Account>`account set --subscription ${subscriptionIdOrName}`;
+    await this.#invoker({ allowBlanks: true })<Account>`account set --subscription ${subscriptionIdOrName}`;
   }
 
   /**
@@ -271,9 +272,9 @@ export class AccountTools implements ArmpitCredentialProvider {
     try {
       let loginAccounts: Account[] | null;
       if (tenantId) {
-        loginAccounts = await this.#invoker.strict<Account[]>`login --tenant ${tenantId}`;
+        loginAccounts = await this.#invoker<Account[]>`login --tenant ${tenantId}`;
       } else {
-        loginAccounts = await this.#invoker.strict<Account[]>`login`;
+        loginAccounts = await this.#invoker<Account[]>`login`;
       }
 
       return loginAccounts;
@@ -318,9 +319,9 @@ export class AccountTools implements ArmpitCredentialProvider {
     let results: Location[];
     if (names != null && names.length > 0) {
       const queryFilter = `[? contains([${names.map(n => `'${n}'`).join(",")}],name)]`;
-      results = await this.#invoker.strict<Location[]>`account list-locations --query ${queryFilter}`;
+      results = await this.#invoker<Location[]>`account list-locations --query ${queryFilter}`;
     } else {
-      results = await this.#invoker.strict<Location[]>`account list-locations`;
+      results = await this.#invoker<Location[]>`account list-locations`;
     }
 
     return results ?? [];

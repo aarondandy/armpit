@@ -127,3 +127,25 @@ export function mergeAbortSignals(...args: (AbortSignal | undefined | null)[]): 
     return null;
   }
 }
+
+export function isTemplateStringArray(value: unknown): value is TemplateStringsArray {
+  return value != null && Array.isArray(value);
+}
+
+export function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
+  return (
+    value != null &&
+    (typeof value === "object" || typeof value === "function") &&
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    typeof (value as any).then === "function"
+  );
+}
+
+export interface Stringy {
+  toString(): string;
+}
+
+export function isStringy(value: unknown): value is Stringy {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return value != null && typeof (value as any).toString === "function";
+}

@@ -12,7 +12,7 @@ import { PrivateDnsManagementClient } from "@azure/arm-privatedns";
 import { isStringValueOrValueArrayEqual, isArrayEqualUnordered, mergeAbortSignals } from "./tsUtils.js";
 import { type SubscriptionId, extractSubscriptionFromId, idsEquals, isResourceId } from "./azureUtils.js";
 import { handleGet, ManagementClientFactory } from "./azureSdkUtils.js";
-import { type AzCliInvoker } from "./azCliUtils.js";
+import { type AzCliInvoker } from "./azCliInvoker.js";
 
 interface CommonNetworkToolsOptions {
   groupName?: string | null;
@@ -240,7 +240,7 @@ export class NetworkTools {
       args.push("--resource-group", groupName);
     }
 
-    return this.#invoker.lax<NetworkSecurityGroup>`network vnet show ${args}`;
+    return this.#invoker({ allowBlanks: true })<NetworkSecurityGroup>`network vnet show ${args}`;
   }
 
   async vnetUpsert(name: string, options?: VnetUpsertOptions): Promise<VirtualNetwork> {
@@ -387,7 +387,7 @@ export class NetworkTools {
       args.push("--resource-group", groupName);
     }
 
-    return this.#invoker.lax<NetworkSecurityGroup>`network nsg show ${args}`;
+    return this.#invoker({ allowBlanks: true })<NetworkSecurityGroup>`network nsg show ${args}`;
   }
 
   async nsgUpsert(name: string, options?: NsgUpsertOptions): Promise<NetworkSecurityGroup> {
@@ -501,7 +501,7 @@ export class NetworkTools {
       args.push("--resource-group", groupName);
     }
 
-    return this.#invoker.lax<PrivateZone>`network private-dns zone show ${args}`;
+    return this.#invoker({ allowBlanks: true })<PrivateZone>`network private-dns zone show ${args}`;
   }
 
   async privateZoneUpsert(name: string, options?: PrivateZoneUpsertOptions): Promise<PrivateZone> {
@@ -538,7 +538,7 @@ export class NetworkTools {
       args.push("--resource-group", groupName);
     }
 
-    return this.#invoker.lax<VirtualNetworkLink>`network private-dns link vnet show ${args}`;
+    return this.#invoker({ allowBlanks: true })<VirtualNetworkLink>`network private-dns link vnet show ${args}`;
   }
 
   async privateZoneVnetLinkUpsert(zoneName: string, name: string, options: PrivateZoneVnetLinkUpsertOptions) {

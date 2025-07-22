@@ -9,7 +9,7 @@ import {
   isScope,
   type AzCliAccessToken,
 } from "./azureUtils.js";
-import type { AzCliInvoker } from "./azCliUtils.js";
+import type { AzCliInvoker } from "./azCliInvoker.js";
 
 export interface ArmpitCredentialOptions {
   tenantId?: TenantId;
@@ -64,7 +64,7 @@ export function buildCliCredential(invokers: AzCliInvoker, options?: ArmpitCrede
       args.push("--subscription", defaultSubscription);
     }
 
-    const result = await invokers.strict<AzCliAccessToken>`account get-access-token ${args}`;
+    const result = await invokers<AzCliAccessToken>`account get-access-token ${args}`;
 
     let expiresOnMs: number | null = null;
 

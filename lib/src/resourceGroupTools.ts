@@ -12,7 +12,7 @@ import {
   isSubscriptionId,
   type SubscriptionId,
 } from "./azureUtils.js";
-import { execaAzCliInvokerFactory, type AzCliInvoker } from "./azCliUtils.js";
+import { AzCliInvoker } from "./azCliInvoker.js";
 import { ManagementClientFactory, handleGet } from "./azureSdkUtils.js";
 import type { ArmpitCredentialOptions, ArmpitCliCredentialFactory } from "./armpitCredential.js";
 import { AzGroupInterface } from "./interface.js";
@@ -151,9 +151,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
       throw new Error("Resource group is not correctly formed");
     }
 
-    const invoker = execaAzCliInvokerFactory({
-      forceAzCommandPrefix: true,
-      laxParsing: false,
+    const invoker = this.#invoker({
       defaultLocation: group.location ?? location,
       defaultResourceGroup: group.name ?? groupName,
       abortSignal: this.#options.abortSignal,
@@ -168,7 +166,9 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
       location,
       subscriptionId,
     };
-    const mainFn = invoker.strict;
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+    const mainFn = (...args: unknown[]) => (invoker as Function)(...args);
     const cliResult = Object.assign(mainFn, { location, subscriptionId });
     Object.defineProperty(cliResult, "name", {
       value: groupName,
@@ -177,8 +177,6 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
       writable: false,
     });
     return Object.assign(cliResult, {
-      strict: invoker.strict,
-      lax: invoker.lax,
       network: new NetworkTools(this.#dependencies, generalToolOptions),
       getCredential: (options?: ArmpitCredentialOptions) => {
         if (subscriptionId) {
@@ -200,7 +198,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
     }
 
     abortSignal?.throwIfAborted();
-    return await this.#invoker.lax<ResourceGroup>`group show --name ${name}`;
+    return await this.#invoker({ allowBlanks: true })<ResourceGroup>`group show --name ${name}`;
   }
 
   async exists(name: string, options?: GroupToolsBaseOptions): Promise<boolean> {
@@ -220,7 +218,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
       args.push("--subscription", subscriptionId);
     }
 
-    return !!(await this.#invoker.lax<boolean>`group exists ${args}`);
+    return !!(await this.#invoker({ allowBlanks: true })<boolean>`group exists ${args}`);
   }
 
   async create(name: string, location: string, options?: GroupToolsBaseOptions): Promise<ResourceGroup> {
@@ -233,7 +231,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
     }
 
     abortSignal?.throwIfAborted();
-    return await this.#invoker.strict<ResourceGroup>`group create --name ${name} --location ${location}`;
+    return await this.#invoker<ResourceGroup>`group create --name ${name} --location ${location}`;
   }
 
   async delete(name: string, options?: GroupToolsBaseOptions) {
@@ -254,7 +252,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
     abortSignal?.throwIfAborted();
 
     const jmesQuery = "[].{id: id, name: name, type: type}"; // passes as an expression for correct escaping
-    const resources = await this.#invoker.strict<
+    const resources = await this.#invoker<
       ResourceSummary[]
     >`resource list --resource-group ${name} --query ${jmesQuery}`;
     if (resources.length !== 0) {
@@ -263,7 +261,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
 
     abortSignal?.throwIfAborted();
 
-    await this.#invoker.strict<void>`group delete --yes --name ${name}`;
+    await this.#invoker({ allowBlanks: true })<void>`group delete --yes --name ${name}`;
     return true;
   }
 
