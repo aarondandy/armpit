@@ -18,9 +18,16 @@ describe("upsert group", () => {
     vi.restoreAllMocks();
   });
 
-  const strictMock = vi.fn();
-  const laxMock = vi.fn();
-  const fakeInvoker = Object.assign((...args) => (isTemplateStringArray(args[0]) ? strictMock(...args) : laxMock), {});
+  const taxFnDefaultMock = vi.fn();
+  const tagFnBlanksMock = vi.fn();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fakeInvoker = (...args: any[]) => {
+    if (isTemplateStringArray(args[0])) {
+      return taxFnDefaultMock(...args);
+    }
+
+    return args[0].allowBlanks ? tagFnBlanksMock : taxFnDefaultMock;
+  };
 
   const sharedDependencies = {
     invoker: fakeInvoker,
@@ -30,8 +37,8 @@ describe("upsert group", () => {
 
   it("can create group via CLI without set subscription", async () => {
     const tools = new ResourceGroupTools(sharedDependencies, {});
-    laxMock.mockResolvedValueOnce(null); // the get
-    strictMock.mockResolvedValueOnce({
+    tagFnBlanksMock.mockResolvedValueOnce(null); // the get
+    taxFnDefaultMock.mockResolvedValueOnce({
       id: constructId(subscriptionId, "stuff"),
       name: "stuff",
       location: "centralus",
@@ -43,13 +50,13 @@ describe("upsert group", () => {
     expect(result.name).toBe("stuff");
     expect(result.location).toBe("centralus");
     expect(result.subscriptionId).toBe(subscriptionId);
-    expect(laxMock).toHaveBeenCalledExactlyOnceWith`group show --name ${"stuff"}`;
-    expect(strictMock).toHaveBeenCalledExactlyOnceWith`group create --name ${"stuff"} --location ${"centralus"}`;
+    expect(tagFnBlanksMock).toHaveBeenCalledExactlyOnceWith`group show --name ${"stuff"}`;
+    expect(taxFnDefaultMock).toHaveBeenCalledExactlyOnceWith`group create --name ${"stuff"} --location ${"centralus"}`;
   });
 
   it("can no-op via CLI without set subscription", async () => {
     const tools = new ResourceGroupTools(sharedDependencies, {});
-    laxMock.mockResolvedValueOnce({
+    tagFnBlanksMock.mockResolvedValueOnce({
       id: constructId(subscriptionId, "stuff"),
       name: "stuff",
       location: "centralus",
@@ -61,8 +68,8 @@ describe("upsert group", () => {
     expect(result.name).toBe("stuff");
     expect(result.location).toBe("centralus");
     expect(result.subscriptionId).toBe(subscriptionId);
-    expect(laxMock).toHaveBeenCalledExactlyOnceWith`group show --name ${"stuff"}`;
-    expect(strictMock).not.toHaveBeenCalled();
+    expect(tagFnBlanksMock).toHaveBeenCalledExactlyOnceWith`group show --name ${"stuff"}`;
+    expect(taxFnDefaultMock).not.toHaveBeenCalled();
   });
 
   it("can create via SDK when subscription is known", async () => {

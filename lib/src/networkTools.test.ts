@@ -4,6 +4,7 @@ import { PrivateDnsManagementClient } from "@azure/arm-privatedns";
 import { constructId } from "./azureUtils.js";
 import { ManagementClientFactory } from "./azureSdkUtils.js";
 import { NetworkTools } from "./networkTools.js";
+import { isTemplateStringArray } from "./tsUtils.js";
 
 describe("upsert vnet", () => {
   const subscriptionId = "41a80a8e-6547-414a-9d34-ecfbc0f7728d";
@@ -22,11 +23,15 @@ describe("upsert vnet", () => {
     vi.restoreAllMocks();
   });
 
-  const strictMock = vi.fn();
-  const laxMock = vi.fn();
-  const fakeInvoker = {
-    strict: strictMock,
-    lax: laxMock,
+  const taxFnDefaultMock = vi.fn();
+  const tagFnBlanksMock = vi.fn();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fakeInvoker = (...args: any[]) => {
+    if (isTemplateStringArray(args[0])) {
+      return taxFnDefaultMock(...args);
+    }
+
+    return args[0].allowBlanks ? tagFnBlanksMock : taxFnDefaultMock;
   };
 
   const sharedDependencies = {
@@ -335,11 +340,15 @@ describe("upsert nsg", () => {
     vi.restoreAllMocks();
   });
 
-  const strictMock = vi.fn();
-  const laxMock = vi.fn();
-  const fakeInvoker = {
-    strict: strictMock,
-    lax: laxMock,
+  const taxFnDefaultMock = vi.fn();
+  const tagFnBlanksMock = vi.fn();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fakeInvoker = (...args: any[]) => {
+    if (isTemplateStringArray(args[0])) {
+      return taxFnDefaultMock(...args);
+    }
+
+    return args[0].allowBlanks ? tagFnBlanksMock : taxFnDefaultMock;
   };
 
   const sharedDependencies = {
@@ -665,11 +674,15 @@ describe("upsert private zone", () => {
     vi.restoreAllMocks();
   });
 
-  const strictMock = vi.fn();
-  const laxMock = vi.fn();
-  const fakeInvoker = {
-    strict: strictMock,
-    lax: laxMock,
+  const taxFnDefaultMock = vi.fn();
+  const tagFnBlanksMock = vi.fn();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fakeInvoker = (...args: any[]) => {
+    if (isTemplateStringArray(args[0])) {
+      return taxFnDefaultMock(...args);
+    }
+
+    return args[0].allowBlanks ? tagFnBlanksMock : taxFnDefaultMock;
   };
 
   const sharedDependencies = {
