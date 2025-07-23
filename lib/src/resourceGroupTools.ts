@@ -197,8 +197,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
       return await handleGet(client.resourceGroups.get(name, { abortSignal }));
     }
 
-    abortSignal?.throwIfAborted();
-    return await this.#invoker({ allowBlanks: true })<ResourceGroup>`group show --name ${name}`;
+    return await this.#invoker({ abortSignal, allowBlanks: true })<ResourceGroup>`group show --name ${name}`;
   }
 
   async exists(name: string, options?: GroupToolsBaseOptions): Promise<boolean> {
@@ -211,14 +210,12 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
       return !!result.body;
     }
 
-    abortSignal?.throwIfAborted();
-
     const args = ["--name", name];
     if (subscriptionId != null) {
       args.push("--subscription", subscriptionId);
     }
 
-    return !!(await this.#invoker({ allowBlanks: true })<boolean>`group exists ${args}`);
+    return !!(await this.#invoker({ abortSignal, allowBlanks: true })<boolean>`group exists ${args}`);
   }
 
   async create(name: string, location: string, options?: GroupToolsBaseOptions): Promise<ResourceGroup> {
@@ -230,8 +227,8 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
       return await client.resourceGroups.createOrUpdate(name, { location }, { abortSignal });
     }
 
-    abortSignal?.throwIfAborted();
-    return await this.#invoker<ResourceGroup>`group create --name ${name} --location ${location}`;
+    const invokerFn = abortSignal != null ? this.#invoker({ abortSignal }) : this.#invoker;
+    return await invokerFn<ResourceGroup>`group create --name ${name} --location ${location}`;
   }
 
   async delete(name: string, options?: GroupToolsBaseOptions) {
@@ -249,19 +246,16 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
     const abortSignal = mergeAbortSignals(options?.abortSignal, this.#options.abortSignal) ?? undefined;
 
     // TODO: Use SDK when possible
-    abortSignal?.throwIfAborted();
 
     const jmesQuery = "[].{id: id, name: name, type: type}"; // passes as an expression for correct escaping
-    const resources = await this.#invoker<
+    const resources = await (abortSignal != null ? this.#invoker({ abortSignal }) : this.#invoker)<
       ResourceSummary[]
     >`resource list --resource-group ${name} --query ${jmesQuery}`;
     if (resources.length !== 0) {
       throw new GroupNotEmptyError(name, resources);
     }
 
-    abortSignal?.throwIfAborted();
-
-    await this.#invoker({ allowBlanks: true })<void>`group delete --yes --name ${name}`;
+    await this.#invoker({ abortSignal, allowBlanks: true })<void>`group delete --yes --name ${name}`;
     return true;
   }
 

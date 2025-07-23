@@ -149,3 +149,28 @@ export function isStringy(value: unknown): value is Stringy {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return value != null && typeof (value as any).toString === "function";
 }
+
+export function isAbortSignal(value: unknown): value is AbortSignal {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return value != null && typeof (value as any).aborted === "boolean";
+}
+
+export function isThrowableAbortSignal(value: unknown): value is AbortSignal & { throwIfAborted(): void } {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return isAbortSignal(value) && typeof (value as any).throwIfAborted === "function";
+}
+
+export function mergeOptionsObjects<TPrev extends object, TNext extends object>(
+  prev: TPrev,
+  next: TNext,
+): TPrev & TNext {
+  return Object.entries(next).reduce(
+    (acc, [key, value]) => {
+      if (value !== undefined) {
+        acc[key as keyof TPrev] = value;
+      }
+      return acc;
+    },
+    { ...prev } as TPrev & TNext,
+  );
+}

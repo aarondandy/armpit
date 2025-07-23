@@ -9,10 +9,15 @@ import type {
 import { NetworkManagementClient } from "@azure/arm-network";
 import type { PrivateDnsManagementClientOptionalParams, PrivateZone, VirtualNetworkLink } from "@azure/arm-privatedns";
 import { PrivateDnsManagementClient } from "@azure/arm-privatedns";
-import { isStringValueOrValueArrayEqual, isArrayEqualUnordered, mergeAbortSignals } from "./tsUtils.js";
+import {
+  isStringValueOrValueArrayEqual,
+  isArrayEqualUnordered,
+  mergeAbortSignals,
+  mergeOptionsObjects,
+} from "./tsUtils.js";
 import { type SubscriptionId, extractSubscriptionFromId, idsEquals, isResourceId } from "./azureUtils.js";
 import { handleGet, ManagementClientFactory } from "./azureSdkUtils.js";
-import { type AzCliInvoker } from "./azCliInvoker.js";
+import type { AzCliOptions, AzCliInvoker, AzCliTemplateFn } from "./azCliInvoker.js";
 
 interface CommonNetworkToolsOptions {
   groupName?: string | null;
@@ -227,24 +232,22 @@ export class NetworkTools {
   }
 
   async vnetGet(name: string, options?: CommonNetworkToolsOptions): Promise<VirtualNetwork | null> {
-    const { groupName, subscriptionId, abortSignal } = this.#buildOperationContext(options);
+    const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
     if (subscriptionId != null && groupName != null) {
       const client = this.getClient(subscriptionId);
       return await handleGet(client.virtualNetworks.get(groupName, name, { abortSignal }));
     }
-
-    abortSignal?.throwIfAborted();
 
     const args = ["--name", name];
     if (groupName) {
       args.push("--resource-group", groupName);
     }
 
-    return this.#invoker({ allowBlanks: true })<NetworkSecurityGroup>`network vnet show ${args}`;
+    return this.#getLaxInvokerFn(options)<NetworkSecurityGroup>`network vnet show ${args}`;
   }
 
   async vnetUpsert(name: string, options?: VnetUpsertOptions): Promise<VirtualNetwork> {
-    const opContext = this.#buildOperationContext(options);
+    const opContext = this.#buildMergedOptions(options);
 
     if (opContext.groupName == null) {
       throw new Error("A group name is required to perform network operations.");
@@ -374,24 +377,22 @@ export class NetworkTools {
   }
 
   async nsgGet(name: string, options?: CommonNetworkToolsOptions): Promise<NetworkSecurityGroup | null> {
-    const { groupName, subscriptionId, abortSignal } = this.#buildOperationContext(options);
+    const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
     if (subscriptionId != null && groupName != null) {
       const client = this.getClient(subscriptionId);
       return await handleGet(client.networkSecurityGroups.get(groupName, name, { abortSignal }));
     }
-
-    abortSignal?.throwIfAborted();
 
     const args = ["--name", name];
     if (groupName) {
       args.push("--resource-group", groupName);
     }
 
-    return this.#invoker({ allowBlanks: true })<NetworkSecurityGroup>`network nsg show ${args}`;
+    return this.#getLaxInvokerFn(options)<NetworkSecurityGroup>`network nsg show ${args}`;
   }
 
   async nsgUpsert(name: string, options?: NsgUpsertOptions): Promise<NetworkSecurityGroup> {
-    const opContext = this.#buildOperationContext(options);
+    const opContext = this.#buildMergedOptions(options);
 
     if (opContext.groupName == null) {
       throw new Error("A group name is required to perform NSG operations.");
@@ -488,24 +489,22 @@ export class NetworkTools {
   }
 
   async privateZoneGet(name: string, options?: CommonPrivateDnsOptions): Promise<PrivateZone | null> {
-    const { groupName, subscriptionId, abortSignal } = this.#buildOperationContext(options);
+    const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
     if (subscriptionId != null && groupName != null) {
       const client = this.getPrivateZoneClient(subscriptionId);
       return await handleGet(client.privateZones.get(groupName, name, { abortSignal }));
     }
-
-    abortSignal?.throwIfAborted();
 
     const args = ["--name", name];
     if (groupName) {
       args.push("--resource-group", groupName);
     }
 
-    return this.#invoker({ allowBlanks: true })<PrivateZone>`network private-dns zone show ${args}`;
+    return this.#getLaxInvokerFn(options)<PrivateZone>`network private-dns zone show ${args}`;
   }
 
   async privateZoneUpsert(name: string, options?: PrivateZoneUpsertOptions): Promise<PrivateZone> {
-    const { groupName, subscriptionId, abortSignal } = this.#buildOperationContext(options);
+    const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
     if (groupName == null) {
       throw new Error("A group name is required to perform DNS zone operations");
     }
@@ -525,24 +524,22 @@ export class NetworkTools {
   }
 
   async privateZoneVnetLinkGet(zoneName: string, name: string, options?: CommonNetworkToolsOptions) {
-    const { groupName, subscriptionId, abortSignal } = this.#buildOperationContext(options);
+    const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
     if (subscriptionId != null && groupName != null) {
       const client = this.getPrivateZoneClient(subscriptionId);
       return await handleGet(client.virtualNetworkLinks.get(groupName, zoneName, name, { abortSignal }));
     }
-
-    abortSignal?.throwIfAborted();
 
     const args = ["--zone-name", zoneName, "--name", name];
     if (groupName) {
       args.push("--resource-group", groupName);
     }
 
-    return this.#invoker({ allowBlanks: true })<VirtualNetworkLink>`network private-dns link vnet show ${args}`;
+    return this.#getLaxInvokerFn(options)<VirtualNetworkLink>`network private-dns link vnet show ${args}`;
   }
 
   async privateZoneVnetLinkUpsert(zoneName: string, name: string, options: PrivateZoneVnetLinkUpsertOptions) {
-    const { groupName, subscriptionId, abortSignal } = this.#buildOperationContext(options);
+    const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
     if (groupName == null) {
       throw new Error("A group name is required to perform DNS zone link operations");
     }
@@ -627,12 +624,42 @@ export class NetworkTools {
     );
   }
 
-  #buildOperationContext(options?: CommonNetworkToolsOptions | null) {
-    return {
-      groupName: options?.groupName ?? this.#options.groupName ?? null,
-      subscriptionId: options?.subscriptionId ?? this.#options.subscriptionId ?? null,
-      location: options?.location ?? this.#options.location ?? null,
-      abortSignal: mergeAbortSignals(options?.abortSignal, this.#options.abortSignal) ?? undefined,
-    };
+  #buildMergedOptions(options?: CommonNetworkToolsOptions | null) {
+    if (options == null) {
+      return this.#options;
+    }
+
+    const abortSignal = mergeAbortSignals(options.abortSignal, this.#options.abortSignal);
+    const merged = mergeOptionsObjects(this.#options, options);
+    if (abortSignal) {
+      merged.abortSignal = abortSignal;
+    }
+
+    return merged;
+  }
+
+  #buildInvokerOptions(options?: CommonNetworkToolsOptions | null): AzCliOptions {
+    const mergedOptions = this.#buildMergedOptions(options);
+    const result: AzCliOptions = {};
+    if (mergedOptions.abortSignal != null) {
+      result.abortSignal = mergedOptions.abortSignal;
+    }
+
+    if (mergedOptions.location != null) {
+      result.defaultLocation = mergedOptions.location;
+    }
+
+    if (mergedOptions.groupName != null) {
+      result.defaultResourceGroup = mergedOptions.groupName;
+    }
+
+    return result;
+  }
+
+  #getLaxInvokerFn(options?: CommonNetworkToolsOptions): AzCliTemplateFn<null> {
+    return this.#invoker({
+      ...this.#buildInvokerOptions(options),
+      allowBlanks: true,
+    });
   }
 }

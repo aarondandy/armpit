@@ -24,18 +24,20 @@ export interface AzCliParsingOptions {
 
 export type AzCliOptions = AzCliInvocationOptions & AzCliParsingOptions;
 
-interface AzCliTemplateFn<TBlankResult extends null | never> {
+export interface AzCliTemplateFn<TBlankResult extends null | never> {
   <TResult>(
     templates: TemplateStringsArray,
     ...expressions: readonly AzTemplateExpression[]
   ): Promise<TResult | TBlankResult>;
 }
 
-export interface AzCliInvoker extends AzCliTemplateFn<never> {
+interface AzCliSpawnFn {
   <TOptions extends AzCliOptions>(
     options: TOptions,
   ): AzCliTemplateFn<TOptions extends { allowBlanks: true } ? null : never>;
 }
+
+export interface AzCliInvoker extends AzCliTemplateFn<never>, AzCliSpawnFn {}
 
 export function ensureAzPrefix(templates: TemplateStringsArray) {
   if (templates.length > 0 && !/^\s*az\s/i.test(templates[0])) {

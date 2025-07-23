@@ -1,4 +1,5 @@
 import type { AccessToken, TokenCredential, GetTokenOptions } from "@azure/core-auth";
+import { isAbortSignal } from "./tsUtils.js";
 import {
   type TenantId,
   isTenantId,
@@ -9,7 +10,7 @@ import {
   isScope,
   type AzCliAccessToken,
 } from "./azureUtils.js";
-import type { AzCliInvoker } from "./azCliInvoker.js";
+import { type AzCliInvoker } from "./azCliInvoker.js";
 
 export interface ArmpitCredentialOptions {
   tenantId?: TenantId;
@@ -44,7 +45,7 @@ export function buildCliCredential(invoker: AzCliInvoker, options?: ArmpitCreden
 
   let lastTokenContext: ArmpitTokenContext | null = null;
 
-  const getToken = async function (scopes: string | string[], options: GetTokenOptions = {}): Promise<AccessToken> {
+  const getToken = async function (scopes: string | string[], options?: GetTokenOptions): Promise<AccessToken> {
     // This is loosely based on AzureCliCredential but uses the internals provided by this library
 
     if (typeof scopes === "string") {
@@ -64,7 +65,8 @@ export function buildCliCredential(invoker: AzCliInvoker, options?: ArmpitCreden
       args.push("--subscription", defaultSubscription);
     }
 
-    const result = await invoker<AzCliAccessToken>`account get-access-token ${args}`;
+    const invokerFn = isAbortSignal(options?.abortSignal) ? invoker({ abortSignal: options.abortSignal }) : invoker;
+    const result = await invokerFn<AzCliAccessToken>`account get-access-token ${args}`;
 
     let expiresOnMs: number | null = null;
 

@@ -1,7 +1,7 @@
 import type { ExecaError } from "execa";
 import type { Location } from "@azure/arm-resources-subscriptions";
 import { mergeAbortSignals } from "./tsUtils.js";
-import type { AzCliInvoker } from "./azCliInvoker.js";
+import type { AzCliInvoker, AzCliTemplateFn } from "./azCliInvoker.js";
 import {
   type Account,
   type SubscriptionIdOrName,
@@ -64,11 +64,10 @@ export class AccountTools implements ArmpitCredentialProvider {
    * This effectively invokes `az account show`.
    */
   async show(options?: AccountToolsOptions) {
-    const { abortSignal } = this.#getInvocationContext(options);
-    abortSignal?.throwIfAborted();
+    const invoker = this.#getLaxInvokerFn(options)<Account>;
 
     try {
-      return await this.#invoker({ allowBlanks: true })<Account>`account show`;
+      return await invoker`account show`;
     } catch (invocationError) {
       const stderr = (<ExecaError>invocationError)?.stderr;
       if (stderr && typeof stderr === "string" && /az login|az account set/i.test(stderr)) {
@@ -85,10 +84,7 @@ export class AccountTools implements ArmpitCredentialProvider {
    * This effectively invokes `az ad signed-in-user show`.
    */
   async showSignedInUser(options?: AccountToolsOptions) {
-    const { abortSignal } = this.#getInvocationContext(options);
-    abortSignal?.throwIfAborted();
-
-    return await this.#invoker<SimpleAdUser>`ad signed-in-user show`;
+    return await this.#getInvokerFn(options)<SimpleAdUser>`ad signed-in-user show`;
   }
 
   /**
@@ -99,8 +95,7 @@ export class AccountTools implements ArmpitCredentialProvider {
    * This effectively invokes `az account list`.
    */
   async list(options?: AccountListOptions): Promise<Account[]> {
-    const { abortSignal } = this.#getInvocationContext(options);
-    abortSignal?.throwIfAborted();
+    const invoker = this.#getLaxInvokerFn(options)<Account[]>;
 
     let args: string[] | undefined;
     if (options) {
@@ -113,14 +108,7 @@ export class AccountTools implements ArmpitCredentialProvider {
       }
     }
 
-    let results: Account[] | null;
-    const invoker = this.#invoker({ allowBlanks: true });
-    if (args && args.length > 0) {
-      results = await invoker<Account[]>`account list ${args}`;
-    } else {
-      results = await invoker<Account[]>`account list`;
-    }
-
+    const results = args && args.length > 0 ? await invoker`account list ${args}` : await invoker`account list`;
     return results ?? [];
   }
 
@@ -131,10 +119,8 @@ export class AccountTools implements ArmpitCredentialProvider {
    * This effectively invokes `az account set`.
    */
   async set(subscriptionIdOrName: SubscriptionIdOrName, options?: AccountToolsOptions) {
-    const { abortSignal } = this.#getInvocationContext(options);
-    abortSignal?.throwIfAborted();
-
-    await this.#invoker({ allowBlanks: true })<Account>`account set --subscription ${subscriptionIdOrName}`;
+    const invoker = this.#getLaxInvokerFn(options)<Account>;
+    await invoker`account set --subscription ${subscriptionIdOrName}`;
   }
 
   /**
@@ -266,18 +252,10 @@ export class AccountTools implements ArmpitCredentialProvider {
    * @returns An account if login is successful.
    */
   async login(tenantId?: string, options?: AccountToolsOptions): Promise<Account[] | null> {
-    const { abortSignal } = this.#getInvocationContext(options);
-    abortSignal?.throwIfAborted();
+    const invoker = this.#getInvokerFn(options)<Account[]>;
 
     try {
-      let loginAccounts: Account[] | null;
-      if (tenantId) {
-        loginAccounts = await this.#invoker<Account[]>`login --tenant ${tenantId}`;
-      } else {
-        loginAccounts = await this.#invoker<Account[]>`login`;
-      }
-
-      return loginAccounts;
+      return tenantId ? await invoker`login --tenant ${tenantId}` : await invoker`login`;
     } catch (invocationError) {
       const stderr = (<ExecaError>invocationError)?.stderr;
       if (stderr && typeof stderr === "string" && /User cancelled/i.test(stderr)) {
@@ -313,15 +291,14 @@ export class AccountTools implements ArmpitCredentialProvider {
    * @returns A lot of Azure locations.
    */
   async listLocations(names?: string[], options?: AccountToolsOptions) {
-    const { abortSignal } = this.#getInvocationContext(options);
-    abortSignal?.throwIfAborted();
+    const invoker = this.#getInvokerFn(options)<Location[]>;
 
     let results: Location[];
     if (names != null && names.length > 0) {
       const queryFilter = `[? contains([${names.map(n => `'${n}'`).join(",")}],name)]`;
-      results = await this.#invoker<Location[]>`account list-locations --query ${queryFilter}`;
+      results = await invoker`account list-locations --query ${queryFilter}`;
     } else {
-      results = await this.#invoker<Location[]>`account list-locations`;
+      results = await invoker`account list-locations`;
     }
 
     return results ?? [];
@@ -331,9 +308,24 @@ export class AccountTools implements ArmpitCredentialProvider {
     return this.#credentialFactory.getCredential(options);
   }
 
-  #getInvocationContext(options?: AccountToolsOptions) {
-    return {
-      abortSignal: mergeAbortSignals(options?.abortSignal, this.#options.abortSignal),
+  #getInvokerFn(options?: AccountToolsOptions): AzCliTemplateFn<never> {
+    const abortSignal = mergeAbortSignals(options?.abortSignal, this.#options.abortSignal);
+    return abortSignal == null ? this.#invoker : this.#invoker({ abortSignal });
+  }
+
+  #getLaxInvokerFn(options?: AccountToolsOptions): AzCliTemplateFn<null> {
+    const invokerOptions: {
+      allowBlanks: true;
+      abortSignal?: AbortSignal;
+    } = {
+      allowBlanks: true,
     };
+
+    const abortSignal = mergeAbortSignals(options?.abortSignal, this.#options.abortSignal);
+    if (abortSignal != null) {
+      invokerOptions.abortSignal = abortSignal;
+    }
+
+    return this.#invoker(invokerOptions);
   }
 }

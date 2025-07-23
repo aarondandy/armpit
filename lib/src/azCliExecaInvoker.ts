@@ -5,7 +5,14 @@ import type {
   SyncResult as ExecaSyncResult,
   TemplateExpression as ExecaTemplateExpression,
 } from "execa";
-import { CallableClassBase, isTemplateStringArray, isPromiseLike, isStringy as isStringy } from "./tsUtils.js";
+import {
+  CallableClassBase,
+  isTemplateStringArray,
+  isPromiseLike,
+  isStringy as isStringy,
+  isThrowableAbortSignal,
+  mergeOptionsObjects,
+} from "./tsUtils.js";
 import {
   AzCliInvoker,
   adjustCliResultObject,
@@ -18,6 +25,10 @@ import {
 function isExecaResult(value: unknown): value is ExecaResult | ExecaSyncResult {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return !!(value && ((value as any).command || (value as any).stdout || (value as any).stderr));
+}
+
+function isExecaAbortSignal(value: AbortSignal) {
+  return value != null && Object.prototype.toString.call(value) === "[object AbortSignal]";
 }
 
 async function prepareExecaExpressionArg(e: AzTemplateExpression): Promise<ExecaTemplateExpression> {
@@ -105,6 +116,10 @@ export class AzCliExecaInvoker extends CallableClassBase implements AzCliInvoker
     templates: TemplateStringsArray,
     ...expressions: readonly AzTemplateExpression[]
   ): Promise<TResult> {
+    if (isThrowableAbortSignal(this.#options.abortSignal)) {
+      this.#options.abortSignal.throwIfAborted();
+    }
+
     const execaEnv: NodeJS.ProcessEnv = {
       ...this.#options.env,
       AZURE_CORE_OUTPUT: "json", // request json by default
@@ -128,12 +143,21 @@ export class AzCliExecaInvoker extends CallableClassBase implements AzCliInvoker
       templates = ensureAzPrefix(templates);
     }
 
+    let abortSignal = this.#options.abortSignal;
+    if (abortSignal != null && !isExecaAbortSignal(abortSignal)) {
+      if (isThrowableAbortSignal(abortSignal)) {
+        abortSignal.throwIfAborted();
+      }
+
+      abortSignal = undefined; // don't forward it to execa if it may be rejected
+    }
+
     const execaFn = Execa$({
       env: execaEnv,
       stdin: "inherit",
       stdout: "pipe",
       stderr: "pipe",
-      cancelSignal: this.#options.abortSignal,
+      cancelSignal: abortSignal,
     });
 
     let invocationResult;
@@ -180,9 +204,6 @@ export class AzCliExecaInvoker extends CallableClassBase implements AzCliInvoker
   }
 
   #withOptions(options: AzCliOptions) {
-    return new AzCliExecaInvoker({
-      ...this.#options,
-      ...options,
-    });
+    return new AzCliExecaInvoker(mergeOptionsObjects(this.#options, options));
   }
 }
