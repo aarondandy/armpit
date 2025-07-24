@@ -13,12 +13,13 @@ await az.account.setOrLogin(targetEnvironment);
 const rg = await az.group(`samples-${targetLocation}`, targetLocation, targetEnvironment.subscriptionId);
 const resourceHash = new NameHash(targetEnvironment.subscriptionId, rg.name, { defaultLength: 6 });
 
-const appEnv = await rg<ManagedEnvironment>`containerapp env create
-  --name appenv-sample-${resourceHash}-${rg.location}
-  --enable-workload-profiles true --logs-destination none`;
+// const appEnv = await rg<ManagedEnvironment>`containerapp env create
+//   --name appenv-sample-${resourceHash}-${rg.location}
+//   --enable-workload-profiles true --logs-destination none`;
+const appEnv = await rg.containerApp.envUpsert(`appenv-sample-${resourceHash}-${rg.location}`, {
+  appLogsConfiguration: { destination: "none" },
+});
 console.log(`[app] app environment ${appEnv.name} ready via ${appEnv.staticIp}`);
-
-// TODO: reduce the line breaks that come from containerapp commands. Likely due to a progress spinner.
 
 const envVars = ["FOO=BAR"];
 

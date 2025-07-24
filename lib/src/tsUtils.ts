@@ -174,3 +174,19 @@ export function mergeOptionsObjects<TPrev extends object, TNext extends object>(
     { ...prev } as TPrev & TNext,
   );
 }
+
+export function applyOptionsDifferences<TTarget extends TSource, TSource extends object>(
+  target: TTarget,
+  source: TSource,
+): boolean {
+  let changesApplied = false;
+  for (const key of Object.keys(source) as [keyof TSource]) {
+    const value = source[key];
+    if (value !== undefined && value !== target[key]) {
+      (target as TSource)[key] = value;
+      changesApplied = true;
+    }
+  }
+
+  return changesApplied;
+}

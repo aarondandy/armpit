@@ -3,7 +3,7 @@ import {
   type ResourceManagementClientOptionalParams,
   ResourceManagementClient,
 } from "@azure/arm-resources";
-import { CallableClassBase, mergeAbortSignals } from "./tsUtils.js";
+import { CallableClassBase, mergeAbortSignals, mergeOptionsObjects } from "./tsUtils.js";
 import { ExistingGroupLocationConflictError, GroupNotEmptyError } from "./errors.js";
 import {
   type ResourceSummary,
@@ -11,12 +11,14 @@ import {
   extractSubscriptionFromId,
   isSubscriptionId,
   type SubscriptionId,
+  locationNameOrCodeEquals,
 } from "./azureUtils.js";
-import { AzCliInvoker } from "./azCliInvoker.js";
+import type { AzCliInvoker, AzCliOptions, AzCliTemplateFn } from "./azCliInvoker.js";
 import { ManagementClientFactory, handleGet } from "./azureSdkUtils.js";
 import type { ArmpitCredentialOptions, ArmpitCliCredentialFactory } from "./armpitCredential.js";
 import { AzGroupInterface } from "./interface.js";
 import { NetworkTools } from "./networkTools.js";
+import { ContainerAppTools } from "./containerAppTools.js";
 
 interface GroupToolsBaseOptions {
   subscriptionId?: SubscriptionId;
@@ -143,7 +145,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
     let group = await this.get(groupName, baseOptions);
     if (group == null) {
       group = await this.create(groupName, location, baseOptions);
-    } else if (group.location !== location) {
+    } else if (!locationNameOrCodeEquals(location, group.location)) {
       throw new ExistingGroupLocationConflictError(group, location);
     }
 
@@ -154,7 +156,6 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
     const invoker = this.#invoker({
       defaultLocation: group.location ?? location,
       defaultResourceGroup: group.name ?? groupName,
-      abortSignal: this.#options.abortSignal,
     });
 
     if (subscriptionId == null && group.id != null) {
@@ -178,6 +179,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
     });
     return Object.assign(cliResult, {
       network: new NetworkTools(this.#dependencies, generalToolOptions),
+      containerApp: new ContainerAppTools(this.#dependencies, generalToolOptions),
       getCredential: (options?: ArmpitCredentialOptions) => {
         if (subscriptionId) {
           options = { subscription: subscriptionId, ...options };
@@ -189,21 +191,17 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
   }
 
   async get(name: string, options?: GroupToolsBaseOptions): Promise<ResourceGroup | null> {
-    const subscriptionId = options?.subscriptionId ?? this.#options.subscriptionId;
-    const abortSignal = mergeAbortSignals(options?.abortSignal, this.#options.abortSignal) ?? undefined;
-
+    const { subscriptionId, abortSignal } = this.#buildMergedOptions(options);
     if (subscriptionId != null) {
       const client = this.getClient(subscriptionId);
       return await handleGet(client.resourceGroups.get(name, { abortSignal }));
     }
 
-    return await this.#invoker({ abortSignal, allowBlanks: true })<ResourceGroup>`group show --name ${name}`;
+    return await this.#getLaxInvokerFn(options)<ResourceGroup>`group show --name ${name}`;
   }
 
   async exists(name: string, options?: GroupToolsBaseOptions): Promise<boolean> {
-    const subscriptionId = options?.subscriptionId ?? this.#options.subscriptionId;
-    const abortSignal = mergeAbortSignals(options?.abortSignal, this.#options.abortSignal) ?? undefined;
-
+    const { subscriptionId, abortSignal } = this.#buildMergedOptions(options);
     if (subscriptionId != null) {
       const client = this.getClient(subscriptionId);
       const result = await client.resourceGroups.checkExistence(name, { abortSignal });
@@ -215,20 +213,17 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
       args.push("--subscription", subscriptionId);
     }
 
-    return !!(await this.#invoker({ abortSignal, allowBlanks: true })<boolean>`group exists ${args}`);
+    return !!(await this.#getLaxInvokerFn(options)<boolean>`group exists ${args}`);
   }
 
   async create(name: string, location: string, options?: GroupToolsBaseOptions): Promise<ResourceGroup> {
-    const subscriptionId = options?.subscriptionId ?? this.#options.subscriptionId;
-    const abortSignal = mergeAbortSignals(options?.abortSignal, this.#options.abortSignal) ?? undefined;
-
+    const { subscriptionId, abortSignal } = this.#buildMergedOptions(options);
     if (subscriptionId != null) {
       const client = this.getClient(subscriptionId);
       return await client.resourceGroups.createOrUpdate(name, { location }, { abortSignal });
     }
 
-    const invokerFn = abortSignal != null ? this.#invoker({ abortSignal }) : this.#invoker;
-    return await invokerFn<ResourceGroup>`group create --name ${name} --location ${location}`;
+    return await this.#getInvokerFn(options)<ResourceGroup>`group create --name ${name} --location ${location}`;
   }
 
   async delete(name: string, options?: GroupToolsBaseOptions) {
@@ -243,19 +238,17 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
       throw new Error(`Loaded resource group for ${name} has a conflicting name: ${group.name}`);
     }
 
-    const abortSignal = mergeAbortSignals(options?.abortSignal, this.#options.abortSignal) ?? undefined;
-
     // TODO: Use SDK when possible
 
     const jmesQuery = "[].{id: id, name: name, type: type}"; // passes as an expression for correct escaping
-    const resources = await (abortSignal != null ? this.#invoker({ abortSignal }) : this.#invoker)<
+    const resources = await this.#getInvokerFn(options)<
       ResourceSummary[]
     >`resource list --resource-group ${name} --query ${jmesQuery}`;
     if (resources.length !== 0) {
       throw new GroupNotEmptyError(name, resources);
     }
 
-    await this.#invoker({ abortSignal, allowBlanks: true })<void>`group delete --yes --name ${name}`;
+    await this.#getLaxInvokerFn(options)<void>`group delete --yes --name ${name}`;
     return true;
   }
 
@@ -290,5 +283,47 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
     }
 
     return location;
+  }
+
+  #buildMergedOptions(options?: GroupToolsBaseOptions | null) {
+    if (options == null) {
+      return this.#options;
+    }
+
+    const merged = mergeOptionsObjects(this.#options, options);
+
+    const abortSignal = mergeAbortSignals(options.abortSignal, this.#options.abortSignal);
+    if (abortSignal) {
+      merged.abortSignal = abortSignal;
+    }
+
+    return merged;
+  }
+
+  #buildInvokerOptions(options?: GroupToolsBaseOptions | null): AzCliOptions {
+    const mergedOptions = this.#buildMergedOptions(options);
+    const result: AzCliOptions = {
+      forceAzCommandPrefix: true,
+    };
+    if (mergedOptions.abortSignal != null) {
+      result.abortSignal = mergedOptions.abortSignal;
+    }
+
+    if (mergedOptions.location != null) {
+      result.defaultLocation = mergedOptions.location;
+    }
+
+    return result;
+  }
+
+  #getInvokerFn(options?: GroupToolsBaseOptions): AzCliTemplateFn<never> {
+    return this.#invoker(this.#buildInvokerOptions(options));
+  }
+
+  #getLaxInvokerFn(options?: GroupToolsBaseOptions): AzCliTemplateFn<null> {
+    return this.#invoker({
+      ...this.#buildInvokerOptions(options),
+      allowBlanks: true,
+    });
   }
 }

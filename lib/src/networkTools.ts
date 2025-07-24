@@ -15,18 +15,24 @@ import {
   mergeAbortSignals,
   mergeOptionsObjects,
 } from "./tsUtils.js";
-import { type SubscriptionId, extractSubscriptionFromId, idsEquals, isResourceId } from "./azureUtils.js";
+import {
+  type SubscriptionId,
+  extractSubscriptionFromId,
+  idsEquals,
+  isResourceId,
+  locationNameOrCodeEquals,
+} from "./azureUtils.js";
 import { handleGet, ManagementClientFactory } from "./azureSdkUtils.js";
 import type { AzCliOptions, AzCliInvoker, AzCliTemplateFn } from "./azCliInvoker.js";
 
-interface CommonNetworkToolsOptions {
+interface NetworkToolsCommonOptions {
   groupName?: string | null;
   location?: string | null;
   subscriptionId?: SubscriptionId | null;
   abortSignal?: AbortSignal;
 }
 
-type NetworkToolsConstructorOptions = CommonNetworkToolsOptions;
+type NetworkToolsConstructorOptions = NetworkToolsCommonOptions;
 
 interface CommonPrivateDnsOptions {
   groupName?: string | null;
@@ -102,7 +108,7 @@ function isSubnetEqual(a: Subnet, b: Subnet) {
   return true;
 }
 
-interface VnetUpsertOptions extends CommonNetworkToolsOptions {
+interface VnetUpsertOptions extends NetworkToolsCommonOptions {
   addressPrefix?: string;
   subnets?: SubnetDescriptor[];
   deleteUnknownSubnets?: boolean;
@@ -209,7 +215,7 @@ function isSecurityRuleEqual(a: SecurityRule, b: SecurityRule) {
   return true;
 }
 
-interface NsgUpsertOptions extends CommonNetworkToolsOptions {
+interface NsgUpsertOptions extends NetworkToolsCommonOptions {
   rules?: SecurityRuleDescriptor[];
   deleteUnknownRules?: boolean;
 }
@@ -228,10 +234,10 @@ export class NetworkTools {
   ) {
     this.#invoker = dependencies.invoker;
     this.#managementClientFactory = dependencies.managementClientFactory;
-    this.#options = options;
+    this.#options = { ...options };
   }
 
-  async vnetGet(name: string, options?: CommonNetworkToolsOptions): Promise<VirtualNetwork | null> {
+  async vnetGet(name: string, options?: NetworkToolsCommonOptions): Promise<VirtualNetwork | null> {
     const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
     if (subscriptionId != null && groupName != null) {
       const client = this.getClient(subscriptionId);
@@ -283,7 +289,7 @@ export class NetworkTools {
     if (vnet) {
       subscriptionId ??= extractSubscriptionFromId(vnet.id);
 
-      if (location != null && vnet.location != null && location !== vnet.location) {
+      if (location != null && vnet.location != null && !locationNameOrCodeEquals(location, vnet.location)) {
         throw new Error(`Specified location ${location} conflicts with existing ${vnet.location}.`);
       }
 
@@ -376,7 +382,7 @@ export class NetworkTools {
     return vnet;
   }
 
-  async nsgGet(name: string, options?: CommonNetworkToolsOptions): Promise<NetworkSecurityGroup | null> {
+  async nsgGet(name: string, options?: NetworkToolsCommonOptions): Promise<NetworkSecurityGroup | null> {
     const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
     if (subscriptionId != null && groupName != null) {
       const client = this.getClient(subscriptionId);
@@ -420,7 +426,7 @@ export class NetworkTools {
     if (nsg) {
       subscriptionId ??= extractSubscriptionFromId(nsg.id);
 
-      if (location != null && nsg.location != null && location !== nsg.location) {
+      if (location != null && nsg.location != null && !locationNameOrCodeEquals(location, nsg.location)) {
         throw new Error(`Specified location ${location} conflicts with existing ${nsg.location}.`);
       }
 
@@ -523,7 +529,7 @@ export class NetworkTools {
     return zone;
   }
 
-  async privateZoneVnetLinkGet(zoneName: string, name: string, options?: CommonNetworkToolsOptions) {
+  async privateZoneVnetLinkGet(zoneName: string, name: string, options?: NetworkToolsCommonOptions) {
     const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
     if (subscriptionId != null && groupName != null) {
       const client = this.getPrivateZoneClient(subscriptionId);
@@ -624,13 +630,14 @@ export class NetworkTools {
     );
   }
 
-  #buildMergedOptions(options?: CommonNetworkToolsOptions | null) {
+  #buildMergedOptions(options?: NetworkToolsCommonOptions | null) {
     if (options == null) {
       return this.#options;
     }
 
-    const abortSignal = mergeAbortSignals(options.abortSignal, this.#options.abortSignal);
     const merged = mergeOptionsObjects(this.#options, options);
+
+    const abortSignal = mergeAbortSignals(options.abortSignal, this.#options.abortSignal);
     if (abortSignal) {
       merged.abortSignal = abortSignal;
     }
@@ -638,7 +645,7 @@ export class NetworkTools {
     return merged;
   }
 
-  #buildInvokerOptions(options?: CommonNetworkToolsOptions | null): AzCliOptions {
+  #buildInvokerOptions(options?: NetworkToolsCommonOptions | null): AzCliOptions {
     const mergedOptions = this.#buildMergedOptions(options);
     const result: AzCliOptions = {};
     if (mergedOptions.abortSignal != null) {
@@ -656,9 +663,10 @@ export class NetworkTools {
     return result;
   }
 
-  #getLaxInvokerFn(options?: CommonNetworkToolsOptions): AzCliTemplateFn<null> {
+  #getLaxInvokerFn(options?: NetworkToolsCommonOptions): AzCliTemplateFn<null> {
     return this.#invoker({
       ...this.#buildInvokerOptions(options),
+      forceAzCommandPrefix: true,
       allowBlanks: true,
     });
   }

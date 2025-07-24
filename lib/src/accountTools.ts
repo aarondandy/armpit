@@ -1,7 +1,7 @@
 import type { ExecaError } from "execa";
 import type { Location } from "@azure/arm-resources-subscriptions";
 import { mergeAbortSignals } from "./tsUtils.js";
-import type { AzCliInvoker, AzCliTemplateFn } from "./azCliInvoker.js";
+import type { AzCliInvoker, AzCliOptions, AzCliTemplateFn } from "./azCliInvoker.js";
 import {
   type Account,
   type SubscriptionIdOrName,
@@ -313,19 +313,24 @@ export class AccountTools implements ArmpitCredentialProvider {
     return abortSignal == null ? this.#invoker : this.#invoker({ abortSignal });
   }
 
-  #getLaxInvokerFn(options?: AccountToolsOptions): AzCliTemplateFn<null> {
-    const invokerOptions: {
-      allowBlanks: true;
-      abortSignal?: AbortSignal;
-    } = {
-      allowBlanks: true,
+  #buildInvokerOptions(options?: AccountToolsOptions): AzCliOptions {
+    const result: AzCliOptions = {
+      forceAzCommandPrefix: true,
+      simplifyContainerAppResults: true,
     };
 
     const abortSignal = mergeAbortSignals(options?.abortSignal, this.#options.abortSignal);
     if (abortSignal != null) {
-      invokerOptions.abortSignal = abortSignal;
+      result.abortSignal = abortSignal;
     }
 
-    return this.#invoker(invokerOptions);
+    return result;
+  }
+
+  #getLaxInvokerFn(options?: AccountToolsOptions): AzCliTemplateFn<null> {
+    return this.#invoker({
+      ...this.#buildInvokerOptions(options),
+      allowBlanks: true,
+    });
   }
 }

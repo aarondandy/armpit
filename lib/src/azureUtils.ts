@@ -139,3 +139,7 @@ export function idsEquals(
     { sort },
   );
 }
+
+export function locationNameOrCodeEquals(a: string, b: string) {
+  return a.replace(/\s/g, "").localeCompare(b.replace(/\s/g, ""), undefined, { sensitivity: "base" }) === 0;
+}

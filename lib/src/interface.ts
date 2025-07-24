@@ -2,6 +2,7 @@ import { ArmpitCredentialProvider } from "./armpitCredential.js";
 import { AccountTools } from "./accountTools.js";
 import { ResourceGroupTools } from "./resourceGroupTools.js";
 import { NetworkTools } from "./networkTools.js";
+import { ContainerAppTools } from "./containerAppTools.js";
 import { AzCliInvoker } from "./azCliInvoker.js";
 
 export interface AzGlobal extends ArmpitCredentialProvider {
@@ -19,6 +20,7 @@ export interface AzGroupBound extends AzLocationBound, ArmpitCredentialProvider 
   readonly name: string;
   readonly subscriptionId: string | null;
   readonly network: NetworkTools;
+  readonly containerApp: ContainerAppTools;
 }
 
 export interface AzGroupInterface extends AzGroupBound, AzCliInvoker {}
