@@ -117,6 +117,28 @@ export function isArrayEqualUnordered<T>(a: T[], b: T[], equals: (a: T, b: T) =>
   return aSearch.length === 0 && bSearch.length === 0;
 }
 
+export function isObjectShallowEqual<T extends object>(a: T, b: T) {
+  if (a == null) {
+    return b == null;
+  } else if (b == null) {
+    return false;
+  }
+
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) {
+    return false;
+  }
+
+  for (const key of aKeys as (keyof T)[]) {
+    if (a[key] != b[key]) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 export function mergeAbortSignals(...args: (AbortSignal | undefined | null)[]): AbortSignal | null {
   const signals = args.filter(s => s != null);
   if (signals.length === 1) {
@@ -175,7 +197,7 @@ export function mergeOptionsObjects<TPrev extends object, TNext extends object>(
   );
 }
 
-export function applyOptionsDifferences<TTarget extends TSource, TSource extends object>(
+export function applyOptionsDifferencesShallow<TTarget extends TSource, TSource extends object>(
   target: TTarget,
   source: TSource,
 ): boolean {
@@ -185,6 +207,34 @@ export function applyOptionsDifferences<TTarget extends TSource, TSource extends
     if (value !== undefined && value !== target[key]) {
       (target as TSource)[key] = value;
       changesApplied = true;
+    }
+  }
+
+  return changesApplied;
+}
+
+export function applyDescriptorOptionsDeep<TTarget extends TSource, TSource extends object>(
+  target: TTarget,
+  source: TSource,
+): boolean {
+  let changesApplied = false;
+
+  for (const key of Object.keys(source) as (keyof TSource)[]) {
+    const value = source[key];
+    if (value === undefined) {
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      changesApplied = true;
+      (target as TSource)[key] = value;
+    } else if (value != null && typeof value === "object" && target[key] != null) {
+      if (applyDescriptorOptionsDeep(target[key], value)) {
+        changesApplied = true;
+      }
+    } else if (value !== target[key]) {
+      changesApplied = true;
+      (target as TSource)[key] = value;
     }
   }
 
