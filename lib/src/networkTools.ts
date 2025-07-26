@@ -5,9 +5,17 @@ import type {
   VirtualNetwork,
   Subnet,
   Delegation,
+  KnownSecurityRuleDirection,
+  KnownSecurityRuleAccess,
+  KnownSecurityRuleProtocol,
 } from "@azure/arm-network";
 import { NetworkManagementClient } from "@azure/arm-network";
-import type { PrivateDnsManagementClientOptionalParams, PrivateZone, VirtualNetworkLink } from "@azure/arm-privatedns";
+import type {
+  PrivateDnsManagementClientOptionalParams,
+  PrivateZone,
+  VirtualNetworkLink,
+  KnownResolutionPolicy,
+} from "@azure/arm-privatedns";
 import { PrivateDnsManagementClient } from "@azure/arm-privatedns";
 import { isStringValueOrValueArrayEqual, isArrayEqualUnordered, mergeAbortSignals } from "./tsUtils.js";
 import { shallowMergeDefinedValues, shallowCloneDefinedValues } from "./optionsUtils.js";
@@ -41,12 +49,15 @@ type PrivateZoneUpsertOptions = CommonPrivateDnsOptions;
 interface PrivateZoneVnetLinkUpsertOptions extends CommonPrivateDnsOptions {
   virtualNetwork: { id?: string } | string;
   registrationEnabled?: boolean;
-  resolutionPolicy?: "Default" | "NxDomainRedirect";
+  resolutionPolicy?: `${KnownResolutionPolicy}`;
 }
 
 type DelegationDescriptor = Pick<Delegation, "name" | "serviceName">;
 
 interface SubnetDescriptor extends Pick<Subnet, "name" | "addressPrefix" | "networkSecurityGroup"> {
+  // TODO: addressPrefixes, routeTable, natGateway, serviceEndpoints, serviceEndpointPolicies
+  // TODO: privateEndpointNetworkPolicies, privateLinkServiceNetworkPolicies, applicationGatewayIPConfigurations
+  // TODO: sharingScope, defaultOutboundAccess, ipamPoolPrefixAllocations
   delegations?: DelegationDescriptor | string | (DelegationDescriptor | string)[];
 }
 
@@ -110,14 +121,14 @@ interface VnetUpsertOptions extends NetworkToolsCommonOptions {
   deleteUnknownSubnets?: boolean;
 }
 
-interface SecurityRuleDescriptor extends Omit<SecurityRule, "etag" | "type" | "provisioningState"> {
-  direction: "Inbound" | "Outbound";
+interface SecurityRuleDescriptor extends Omit<SecurityRule, "etag" | "type"> {
   priority: number;
-  access: "Allow" | "Deny";
-  protocol: "Tcp" | "Udp" | "Icmp" | "Esp" | "*" | "Ah";
+  direction: `${KnownSecurityRuleDirection}`;
+  access: `${KnownSecurityRuleAccess}`;
+  protocol: `${KnownSecurityRuleProtocol}`;
 }
 
-function isNsgAccessType(access: unknown): access is SecurityRuleDescriptor["access"] {
+function isNsgAccessType(access: unknown): access is "Allow" | "Deny" {
   return access === "Allow" || access === "Deny";
 }
 
@@ -126,23 +137,21 @@ function assignMissingRequiredSecurityRuleOptions(rule: SecurityRule) {
     rule.protocol = "*";
   }
 
-  if (!rule.sourceAddressPrefix && !rule.sourceAddressPrefixes && !rule.sourceApplicationSecurityGroups) {
+  if (!(rule.sourceAddressPrefix || rule.sourceAddressPrefixes || rule.sourceApplicationSecurityGroups)) {
     rule.sourceAddressPrefix = "*";
   }
 
-  if (!rule.sourcePortRange && !rule.sourcePortRanges) {
+  if (!(rule.sourcePortRange || rule.sourcePortRanges)) {
     rule.sourcePortRange = "*";
   }
 
   if (
-    !rule.destinationAddressPrefix &&
-    !rule.destinationAddressPrefixes &&
-    !rule.destinationApplicationSecurityGroups
+    !(rule.destinationAddressPrefix || rule.destinationAddressPrefixes || rule.destinationApplicationSecurityGroups)
   ) {
     rule.destinationAddressPrefix = "*";
   }
 
-  if (!rule.destinationPortRange && !rule.destinationPortRanges) {
+  if (!(rule.destinationPortRange || rule.destinationPortRanges)) {
     rule.destinationPortRange = "*";
   }
 }
