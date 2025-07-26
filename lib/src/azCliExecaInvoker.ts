@@ -11,8 +11,8 @@ import {
   isPromiseLike,
   isStringy as isStringy,
   isThrowableAbortSignal,
-  mergeOptionsObjects,
 } from "./tsUtils.js";
+import { shallowMergeDefinedValues } from "./optionsUtils.js";
 import {
   AzCliInvoker,
   adjustCliResultObject,
@@ -87,8 +87,11 @@ export class AzCliExecaInvoker extends CallableClassBase implements AzCliInvoker
       allowBlanks: false,
       unwrapResults: true,
       simplifyContainerAppResults: true,
-      ...options,
     };
+
+    if (options) {
+      this.#options = shallowMergeDefinedValues(this.#options, options);
+    }
   }
 
   protected fnImpl(
@@ -204,6 +207,6 @@ export class AzCliExecaInvoker extends CallableClassBase implements AzCliInvoker
   }
 
   #withOptions(options: AzCliOptions) {
-    return new AzCliExecaInvoker(mergeOptionsObjects(this.#options, options));
+    return new AzCliExecaInvoker(shallowMergeDefinedValues(this.#options, options));
   }
 }

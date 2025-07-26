@@ -8,14 +8,12 @@ import type {
   Template,
 } from "@azure/arm-appcontainers";
 import { ContainerAppsAPIClient } from "@azure/arm-appcontainers";
+import { mergeAbortSignals, isArrayEqualUnordered, isObjectShallowEqual } from "./tsUtils.js";
 import {
-  mergeAbortSignals,
-  mergeOptionsObjects,
+  shallowMergeDefinedValues,
   applyOptionsDifferencesShallow,
-  isArrayEqualUnordered,
   applyDescriptorOptionsDeep,
-  isObjectShallowEqual,
-} from "./tsUtils.js";
+} from "./optionsUtils.js";
 import { type SubscriptionId, extractSubscriptionFromId, locationNameOrCodeEquals } from "./azureUtils.js";
 import { ManagementClientFactory, handleGet } from "./azureSdkUtils.js";
 import { AzCliInvoker, AzCliOptions, AzCliTemplateFn } from "./azCliInvoker.js";
@@ -341,7 +339,7 @@ export class ContainerAppTools {
       return this.#options;
     }
 
-    const merged = mergeOptionsObjects(this.#options, options);
+    const merged = shallowMergeDefinedValues(this.#options, options);
 
     const abortSignal = mergeAbortSignals(options.abortSignal, this.#options.abortSignal);
     if (abortSignal) {
@@ -355,7 +353,7 @@ export class ContainerAppTools {
     const mergedOptions = this.#buildMergedOptions(options);
     const result: AzCliOptions = {
       forceAzCommandPrefix: true,
-      simplifyContainerAppResults: true,
+      simplifyContainerAppResults: true, // required for most containerapp responses
     };
     if (mergedOptions.abortSignal != null) {
       result.abortSignal = mergedOptions.abortSignal;
@@ -371,10 +369,6 @@ export class ContainerAppTools {
 
     return result;
   }
-
-  // #getInvokerFn(options?: ContainerAppToolsCommonOptions): AzCliTemplateFn<never> {
-  //   return this.#invoker(this.#buildInvokerOptions(options));
-  // }
 
   #getLaxInvokerFn(options?: ContainerAppToolsCommonOptions): AzCliTemplateFn<null> {
     return this.#invoker({

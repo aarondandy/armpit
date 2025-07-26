@@ -3,7 +3,8 @@ import {
   type ResourceManagementClientOptionalParams,
   ResourceManagementClient,
 } from "@azure/arm-resources";
-import { CallableClassBase, mergeAbortSignals, mergeOptionsObjects } from "./tsUtils.js";
+import { CallableClassBase, mergeAbortSignals } from "./tsUtils.js";
+import { shallowMergeDefinedValues, shallowCloneDefinedValues } from "./optionsUtils.js";
 import { ExistingGroupLocationConflictError, GroupNotEmptyError } from "./errors.js";
 import {
   type ResourceSummary,
@@ -57,7 +58,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
     super();
     this.#dependencies = dependencies;
     this.#invoker = dependencies.invoker;
-    this.#options = options;
+    this.#options = shallowCloneDefinedValues(options);
   }
 
   protected fnImpl(
@@ -290,7 +291,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
       return this.#options;
     }
 
-    const merged = mergeOptionsObjects(this.#options, options);
+    const merged = shallowMergeDefinedValues(this.#options, options);
 
     const abortSignal = mergeAbortSignals(options.abortSignal, this.#options.abortSignal);
     if (abortSignal) {

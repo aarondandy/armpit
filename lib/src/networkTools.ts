@@ -9,12 +9,8 @@ import type {
 import { NetworkManagementClient } from "@azure/arm-network";
 import type { PrivateDnsManagementClientOptionalParams, PrivateZone, VirtualNetworkLink } from "@azure/arm-privatedns";
 import { PrivateDnsManagementClient } from "@azure/arm-privatedns";
-import {
-  isStringValueOrValueArrayEqual,
-  isArrayEqualUnordered,
-  mergeAbortSignals,
-  mergeOptionsObjects,
-} from "./tsUtils.js";
+import { isStringValueOrValueArrayEqual, isArrayEqualUnordered, mergeAbortSignals } from "./tsUtils.js";
+import { shallowMergeDefinedValues, shallowCloneDefinedValues } from "./optionsUtils.js";
 import {
   type SubscriptionId,
   extractSubscriptionFromId,
@@ -234,7 +230,7 @@ export class NetworkTools {
   ) {
     this.#invoker = dependencies.invoker;
     this.#managementClientFactory = dependencies.managementClientFactory;
-    this.#options = { ...options };
+    this.#options = shallowCloneDefinedValues(options);
   }
 
   async vnetGet(name: string, options?: NetworkToolsCommonOptions): Promise<VirtualNetwork | null> {
@@ -635,7 +631,7 @@ export class NetworkTools {
       return this.#options;
     }
 
-    const merged = mergeOptionsObjects(this.#options, options);
+    const merged = shallowMergeDefinedValues(this.#options, options);
 
     const abortSignal = mergeAbortSignals(options.abortSignal, this.#options.abortSignal);
     if (abortSignal) {
@@ -647,7 +643,10 @@ export class NetworkTools {
 
   #buildInvokerOptions(options?: NetworkToolsCommonOptions | null): AzCliOptions {
     const mergedOptions = this.#buildMergedOptions(options);
-    const result: AzCliOptions = {};
+    const result: AzCliOptions = {
+      forceAzCommandPrefix: true,
+      unwrapResults: true, // required for network create/update responses
+    };
     if (mergedOptions.abortSignal != null) {
       result.abortSignal = mergedOptions.abortSignal;
     }
@@ -666,7 +665,6 @@ export class NetworkTools {
   #getLaxInvokerFn(options?: NetworkToolsCommonOptions): AzCliTemplateFn<null> {
     return this.#invoker({
       ...this.#buildInvokerOptions(options),
-      forceAzCommandPrefix: true,
       allowBlanks: true,
     });
   }
