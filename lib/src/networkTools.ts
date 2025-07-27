@@ -356,25 +356,18 @@ export class NetworkTools {
         upsertRequired = true;
       }
     } else {
+      if (location == null) {
+        throw new Error("A location is required");
+      }
+
       upsertRequired = true;
       vnet = {
         name,
+        location,
+        addressSpace: addressSpaceDescriptor,
+        subnets: subnetsNew,
+        ...descriptorRest,
       };
-
-      if (location) {
-        vnet.location = location;
-      }
-
-      if (addressSpaceDescriptor) {
-        vnet.addressSpace = addressSpaceDescriptor;
-      }
-      vnet.addressSpace = addressPrefix ? { addressPrefixes: [addressPrefix] } : addressSpace;
-
-      if (subnetsNew != null) {
-        vnet.subnets = subnetsNew;
-      }
-
-      applyOptionsDifferencesShallow(vnet, descriptorRest);
     }
 
     if (upsertRequired) {
@@ -582,20 +575,17 @@ export class NetworkTools {
         upsertRequired = true;
       }
     } else {
+      if (location == null) {
+        throw new Error("A location is required");
+      }
+
       upsertRequired = true;
       nsg = {
         name,
+        location,
+        securityRules: nsgRulesNew,
+        ...descriptorRest,
       };
-
-      if (location) {
-        nsg.location = location;
-      }
-
-      if (nsgRulesNew != null) {
-        nsg.securityRules = nsgRulesNew;
-      }
-
-      applyOptionsDifferencesShallow(nsg, descriptorRest);
     }
 
     if (upsertRequired) {
@@ -707,9 +697,8 @@ export class NetworkTools {
         name,
         location: "global",
         virtualNetwork: { id: virtualNetworkId },
+        ...descriptorRest,
       };
-
-      applyOptionsDifferencesShallow(link, descriptorRest as VirtualNetworkLink);
     }
 
     if (upsertRequired) {

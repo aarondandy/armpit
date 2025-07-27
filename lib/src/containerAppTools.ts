@@ -3,113 +3,105 @@ import type {
   ManagedEnvironment,
   ContainerApp,
   ManagedServiceIdentity,
+  UserAssignedIdentity,
+  KnownManagedServiceIdentityType,
   Configuration,
   Ingress,
   Template,
+  KnownActiveRevisionsMode,
+  BaseContainer,
 } from "@azure/arm-appcontainers";
 import { ContainerAppsAPIClient } from "@azure/arm-appcontainers";
-import { mergeAbortSignals, isArrayEqualUnordered, isObjectShallowEqual } from "./tsUtils.js";
+import { mergeAbortSignals, isArrayEqual } from "./tsUtils.js";
 import {
+  shallowCloneDefinedValues,
   shallowMergeDefinedValues,
   applyOptionsDifferencesShallow,
-  applyDescriptorOptionsDeep,
+  applyOptionsDifferencesDeep,
+  applyObjectKeyProperties,
+  applyArrayKeyedDescriptor,
 } from "./optionsUtils.js";
 import { type SubscriptionId, extractSubscriptionFromId, locationNameOrCodeEquals } from "./azureUtils.js";
 import { ManagementClientFactory, handleGet } from "./azureSdkUtils.js";
 import { AzCliInvoker, AzCliOptions, AzCliTemplateFn } from "./azCliInvoker.js";
 
-interface ContainerAppToolsCommonOptions {
+interface ContainerAppToolsOptions {
   groupName?: string | null;
   location?: string | null;
   subscriptionId?: SubscriptionId | null;
   abortSignal?: AbortSignal;
 }
 
-type ContainerAppToolsConstructorOptions = ContainerAppToolsCommonOptions;
-
-type ManagedEnvironmentUpsertOptions = ContainerAppToolsCommonOptions &
-  Pick<ManagedEnvironment, "vnetConfiguration" | "appLogsConfiguration">;
-
-interface ManagedServiceIdentityDescriptor extends Pick<ManagedServiceIdentity, "type"> {
-  userAssignedIdentities?: {
-    [propertyName: string]: object;
+function splitContainerAppOptionsAndDescriptor<T extends ContainerAppToolsOptions>(optionsDescriptor: T) {
+  const { groupName, location, subscriptionId, abortSignal, ...rest } = optionsDescriptor;
+  return {
+    options: { groupName, location, subscriptionId, abortSignal } as ContainerAppToolsOptions,
+    descriptor: rest,
   };
 }
 
-function applyIdentityOptions(target: ManagedServiceIdentity, source: ManagedServiceIdentityDescriptor) {
+interface ManagedServiceIdentityDescriptor extends Pick<ManagedServiceIdentity, "type"> {
+  type: `${KnownManagedServiceIdentityType}`;
+  userAssignedIdentities?: {
+    [propertyName: string]: Omit<UserAssignedIdentity, "principalId" | "clientId">;
+  };
+}
+
+function applyIdentityOptions(target: ManagedServiceIdentity, descriptor: ManagedServiceIdentityDescriptor) {
+  const { userAssignedIdentities, ...descriptorRest } = descriptor;
   let updated = false;
 
-  if (source.type != null && source.type != target.type) {
-    updated = true;
-    target.type = source.type;
-  }
-
-  if (source.userAssignedIdentities != null) {
+  if (userAssignedIdentities != null) {
     target.userAssignedIdentities ??= {};
-    const sourceKeys = Object.keys(source.userAssignedIdentities);
-    const targetKeys = Object.keys(target.userAssignedIdentities);
 
-    for (const toRemove of targetKeys.filter(k => !sourceKeys.includes(k))) {
+    if (
+      applyObjectKeyProperties(
+        target.userAssignedIdentities,
+        userAssignedIdentities,
+        (k, t, s) => {
+          t[k] = s[k] ?? {};
+        },
+        true,
+      )
+    ) {
       updated = true;
-      delete target.userAssignedIdentities[toRemove];
     }
+  }
 
-    for (const toAdd of sourceKeys.filter(k => !targetKeys.includes(k))) {
-      updated = true;
-      target.userAssignedIdentities[toAdd] = source.userAssignedIdentities[toAdd] ?? {};
-    }
+  if (applyOptionsDifferencesShallow(target, descriptorRest as ManagedServiceIdentity)) {
+    updated = true;
   }
 
   return updated;
 }
 
-interface ConfigurationDescriptor extends Pick<Configuration, "secrets" | "registries" | "maxInactiveRevisions"> {
-  activeRevisionsMode?: "Multiple" | "Single";
-  ingress?: Omit<Ingress, "fqdn">;
+interface ManagedEnvironmentDescriptor
+  extends Pick<
+    ManagedEnvironment,
+    | "vnetConfiguration"
+    | "appLogsConfiguration"
+    | "zoneRedundant"
+    | "daprAIInstrumentationKey"
+    | "daprAIConnectionString"
+    | "workloadProfiles"
+  > {
+  identity?: ManagedServiceIdentityDescriptor;
 }
+// TODO: customDomainConfiguration
+// TODO: infrastructureResourceGroup
+// TODO: peerAuthentication
+// TODO: peerTrafficConfiguration
 
-function applyConfigurationOptions(target: Configuration, source: ConfigurationDescriptor) {
-  let updated = false;
+type IngressDescriptor = Omit<Ingress, "fqdn">;
 
-  if (source.secrets != null) {
-    if (target.secrets == null || !isArrayEqualUnordered(source.secrets, target.secrets, isObjectShallowEqual)) {
-      target.secrets = source.secrets;
-      updated = true;
-    }
-  }
-
-  if (source.activeRevisionsMode != null && source.activeRevisionsMode != target.activeRevisionsMode) {
-    target.activeRevisionsMode = source.activeRevisionsMode;
-    updated = true;
-  }
-
-  if (source.ingress != null) {
-    target.ingress ??= {};
-    if (applyDescriptorOptionsDeep(target.ingress, source.ingress)) {
-      updated = true;
-    }
-  }
-
-  if (source.registries != null) {
-    target.registries = source.registries;
-    updated = true;
-  }
-
-  if (source.maxInactiveRevisions != null && source.maxInactiveRevisions !== target.maxInactiveRevisions) {
-    target.maxInactiveRevisions = source.maxInactiveRevisions;
-    updated = true;
-  }
-
-  return updated;
+interface ConfigurationDescriptor extends Omit<Configuration, "activeRevisionsMode" | "ingress"> {
+  activeRevisionsMode?: `${KnownActiveRevisionsMode}`;
+  ingress?: IngressDescriptor;
 }
 
 type TemplateDescriptor = Template;
 
-function applyTemplateOptions(target: Template, source: TemplateDescriptor) {
-  return applyDescriptorOptionsDeep(target, source);
-}
-
-interface ContainerAppUpsertOptions extends ContainerAppToolsCommonOptions, Pick<ContainerApp, "environmentId"> {
+interface ContainerAppDescriptor extends Pick<ContainerApp, "environmentId" | "workloadProfileName"> {
   identity?: ManagedServiceIdentityDescriptor;
   configuration?: ConfigurationDescriptor;
   template?: TemplateDescriptor;
@@ -118,21 +110,21 @@ interface ContainerAppUpsertOptions extends ContainerAppToolsCommonOptions, Pick
 export class ContainerAppTools {
   #invoker: AzCliInvoker;
   #managementClientFactory: ManagementClientFactory;
-  #options: ContainerAppToolsConstructorOptions;
+  #options: ContainerAppToolsOptions;
 
   constructor(
     dependencies: {
       invoker: AzCliInvoker;
       managementClientFactory: ManagementClientFactory;
     },
-    options: ContainerAppToolsConstructorOptions,
+    options: ContainerAppToolsOptions,
   ) {
     this.#invoker = dependencies.invoker;
     this.#managementClientFactory = dependencies.managementClientFactory;
-    this.#options = { ...options };
+    this.#options = shallowCloneDefinedValues(options);
   }
 
-  async envGet(name: string, options?: ContainerAppToolsCommonOptions): Promise<ManagedEnvironment | null> {
+  async envGet(name: string, options?: ContainerAppToolsOptions): Promise<ManagedEnvironment | null> {
     const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
     if (subscriptionId != null && groupName != null) {
       const client = this.getClient(subscriptionId);
@@ -147,7 +139,15 @@ export class ContainerAppTools {
     return this.#getLaxInvokerFn(options)<ManagedEnvironment>`containerapp env show ${args}`;
   }
 
-  async envUpsert(name: string, options?: ManagedEnvironmentUpsertOptions): Promise<ManagedEnvironment> {
+  async envUpsert(
+    name: string,
+    optionsDescriptor?: ManagedEnvironmentDescriptor & ContainerAppToolsOptions,
+  ): Promise<ManagedEnvironment> {
+    const {
+      options,
+      descriptor: { identity, workloadProfiles, ...descriptorRest },
+    } = optionsDescriptor ? splitContainerAppOptionsAndDescriptor(optionsDescriptor) : { descriptor: {} };
+
     const opContext = this.#buildMergedOptions(options);
 
     if (opContext.groupName == null) {
@@ -167,38 +167,35 @@ export class ContainerAppTools {
         throw new Error(`Specified location ${location} conflicts with existing ${appEnv.location}.`);
       }
 
-      if (options) {
-        if (options.vnetConfiguration) {
-          appEnv.vnetConfiguration ??= {};
-
-          if (applyOptionsDifferencesShallow(appEnv.vnetConfiguration, options.vnetConfiguration)) {
+      if (identity != null) {
+        if (appEnv.identity != null) {
+          if (applyIdentityOptions(appEnv.identity, identity)) {
             upsertRequired = true;
           }
+        } else {
+          appEnv.identity = shallowCloneDefinedValues(identity);
+          upsertRequired = true;
         }
+      }
 
-        if (options.appLogsConfiguration) {
-          appEnv.appLogsConfiguration ??= {};
-
-          if (
-            options.appLogsConfiguration.destination != null &&
-            options.appLogsConfiguration.destination !== appEnv.appLogsConfiguration.destination
-          ) {
-            upsertRequired = true;
-            appEnv.appLogsConfiguration.destination = options.appLogsConfiguration.destination;
-          }
-
-          if (options.appLogsConfiguration.logAnalyticsConfiguration) {
-            appEnv.appLogsConfiguration.logAnalyticsConfiguration ??= {};
-            if (
-              applyOptionsDifferencesShallow(
-                appEnv.appLogsConfiguration.logAnalyticsConfiguration,
-                options.appLogsConfiguration.logAnalyticsConfiguration,
-              )
-            ) {
-              upsertRequired = true;
-            }
-          }
+      if (workloadProfiles != null) {
+        appEnv.workloadProfiles ??= [];
+        if (
+          applyArrayKeyedDescriptor(
+            appEnv.workloadProfiles,
+            workloadProfiles,
+            "name",
+            applyOptionsDifferencesDeep,
+            shallowCloneDefinedValues,
+            { deleteUnmatchedTargets: true },
+          )
+        ) {
+          upsertRequired = true;
         }
+      }
+
+      if (applyOptionsDifferencesDeep(appEnv, descriptorRest)) {
+        upsertRequired = true;
       }
     } else {
       if (location == null) {
@@ -209,12 +206,9 @@ export class ContainerAppTools {
       appEnv = {
         name,
         location,
+        workloadProfiles,
+        ...descriptorRest,
       };
-
-      if (options) {
-        appEnv.vnetConfiguration = options.vnetConfiguration;
-        appEnv.appLogsConfiguration = options.appLogsConfiguration;
-      }
     }
 
     if (upsertRequired) {
@@ -227,7 +221,7 @@ export class ContainerAppTools {
     return appEnv;
   }
 
-  async appGet(name: string, options?: ContainerAppToolsCommonOptions): Promise<ContainerApp | null> {
+  async appGet(name: string, options?: ContainerAppToolsOptions): Promise<ContainerApp | null> {
     const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
     if (subscriptionId != null && groupName != null) {
       const client = this.getClient(subscriptionId);
@@ -242,7 +236,12 @@ export class ContainerAppTools {
     return this.#getLaxInvokerFn(options)<ContainerApp>`containerapp show ${args}`;
   }
 
-  async appUpsert(name: string, options?: ContainerAppUpsertOptions) {
+  async appUpsert(name: string, optionsDescriptor: ContainerAppDescriptor & ContainerAppToolsOptions) {
+    const {
+      options,
+      descriptor: { identity, configuration, template, ...descriptorRest },
+    } = splitContainerAppOptionsAndDescriptor(optionsDescriptor);
+
     const opContext = this.#buildMergedOptions(options);
 
     if (opContext.groupName == null) {
@@ -262,37 +261,264 @@ export class ContainerAppTools {
         throw new Error(`Specified location ${location} conflicts with existing ${app.location}.`);
       }
 
-      if (options) {
-        if (options.environmentId != null && options.environmentId !== app.environmentId) {
-          app.environmentId = options.environmentId;
-        }
-
-        if (options.template) {
-          if (app.template == null) {
-            app.template = options.template;
-            upsertRequired = true;
-          } else if (applyTemplateOptions(app.template, options.template)) {
+      if (identity != null) {
+        if (app.identity != null) {
+          if (applyIdentityOptions(app.identity, identity)) {
             upsertRequired = true;
           }
+        } else {
+          app.identity = shallowCloneDefinedValues(identity);
+          upsertRequired = true;
+        }
+      }
+
+      if (configuration != null) {
+        function applyConfigurationOptions(target: Configuration, source: ConfigurationDescriptor) {
+          let updated = false;
+
+          const { identitySettings, registries, secrets, service, ...descriptorRest } = source;
+
+          if (identitySettings != null) {
+            target.identitySettings ??= [];
+            if (
+              applyArrayKeyedDescriptor(
+                target.identitySettings,
+                identitySettings,
+                "identity",
+                applyOptionsDifferencesDeep,
+                shallowCloneDefinedValues,
+                { deleteUnmatchedTargets: true },
+              )
+            ) {
+              updated = true;
+            }
+          }
+
+          if (registries != null) {
+            target.registries ??= [];
+            if (
+              applyArrayKeyedDescriptor(
+                target.registries,
+                registries,
+                "server",
+                applyOptionsDifferencesShallow,
+                shallowCloneDefinedValues,
+                { deleteUnmatchedTargets: true },
+              )
+            ) {
+              updated = true;
+            }
+          }
+
+          if (secrets != null) {
+            target.secrets ??= [];
+            if (
+              applyArrayKeyedDescriptor(
+                target.secrets,
+                secrets,
+                "name",
+                applyOptionsDifferencesShallow,
+                shallowCloneDefinedValues,
+                { deleteUnmatchedTargets: true },
+              )
+            ) {
+              updated = true;
+            }
+          }
+
+          if (service != null) {
+            if (target.service == null) {
+              target.service = service;
+            } else {
+              if (applyOptionsDifferencesDeep(target.service, service)) {
+                updated = true;
+              }
+            }
+          }
+
+          // simple shallow copy
+          if (applyOptionsDifferencesDeep(target, descriptorRest as Configuration)) {
+            updated = true;
+          }
+
+          return updated;
         }
 
-        if (options.configuration) {
-          if (app.configuration == null) {
-            app.configuration = options.configuration;
-            upsertRequired = true;
-          } else if (applyConfigurationOptions(app.configuration, options.configuration)) {
-            upsertRequired = true;
+        app.configuration ??= {};
+        if (applyConfigurationOptions(app.configuration, configuration)) {
+          upsertRequired = true;
+        }
+      }
+
+      if (template != null) {
+        function applyTemplateOptions(target: Template, source: TemplateDescriptor) {
+          const { initContainers, containers, scale, serviceBinds, volumes, ...descriptorRest } = source;
+          let updated = false;
+
+          function applyContainerOptions(target: BaseContainer, source: BaseContainer) {
+            let updated = false;
+
+            const { args, command, env, volumeMounts, ...descriptorRest } = source;
+
+            if (args != null) {
+              target.args ??= [];
+              if (!isArrayEqual(target.args, args)) {
+                target.args = [...args];
+                updated = true;
+              }
+            }
+
+            if (command != null) {
+              target.command ??= [];
+              if (!isArrayEqual(target.command, command)) {
+                target.command = [...command];
+                updated = true;
+              }
+            }
+
+            if (env != null) {
+              target.env ??= [];
+              if (
+                applyArrayKeyedDescriptor(
+                  target.env,
+                  env,
+                  "name",
+                  applyOptionsDifferencesShallow,
+                  shallowCloneDefinedValues,
+                  { deleteUnmatchedTargets: true },
+                )
+              ) {
+                updated = true;
+              }
+            }
+
+            if (volumeMounts != null) {
+              target.volumeMounts ??= [];
+              if (
+                applyArrayKeyedDescriptor(
+                  target.volumeMounts,
+                  volumeMounts,
+                  "volumeName",
+                  applyOptionsDifferencesShallow,
+                  shallowCloneDefinedValues,
+                  { deleteUnmatchedTargets: true },
+                )
+              ) {
+                updated = true;
+              }
+            }
+
+            if (applyOptionsDifferencesDeep(target, descriptorRest)) {
+              updated = true;
+            }
+
+            return updated;
           }
+
+          if (initContainers != null) {
+            target.initContainers ??= [];
+            if (
+              applyArrayKeyedDescriptor(
+                target.initContainers,
+                initContainers,
+                "name",
+                applyContainerOptions,
+                shallowCloneDefinedValues,
+                { deleteUnmatchedTargets: true },
+              )
+            ) {
+              updated = true;
+            }
+          }
+
+          if (containers != null) {
+            target.containers ??= [];
+            if (
+              applyArrayKeyedDescriptor(
+                target.containers,
+                containers,
+                "name",
+                applyContainerOptions,
+                shallowCloneDefinedValues,
+                { deleteUnmatchedTargets: true },
+              )
+            ) {
+              updated = true;
+            }
+          }
+
+          if (scale != null) {
+            const { rules: scaleRules, ...scaleRest } = scale;
+            target.scale ??= {};
+
+            if (scaleRules != null) {
+              target.scale.rules ??= [];
+              if (
+                applyArrayKeyedDescriptor(
+                  target.scale.rules,
+                  scaleRules,
+                  "name",
+                  applyOptionsDifferencesShallow,
+                  shallowCloneDefinedValues,
+                  { deleteUnmatchedTargets: true },
+                )
+              ) {
+                updated = true;
+              }
+            }
+
+            if (applyOptionsDifferencesDeep(target.scale, scaleRest)) {
+              updated = true;
+            }
+          }
+
+          if (serviceBinds != null) {
+            target.serviceBinds ??= [];
+            if (
+              applyArrayKeyedDescriptor(
+                target.serviceBinds,
+                serviceBinds,
+                "name",
+                applyOptionsDifferencesShallow,
+                shallowCloneDefinedValues,
+                { deleteUnmatchedTargets: true },
+              )
+            ) {
+              updated = true;
+            }
+          }
+
+          if (volumes != null) {
+            target.volumes ??= [];
+            if (
+              applyArrayKeyedDescriptor(
+                target.volumes,
+                volumes,
+                "name",
+                applyOptionsDifferencesShallow,
+                shallowCloneDefinedValues,
+                { deleteUnmatchedTargets: true },
+              )
+            ) {
+              updated = true;
+            }
+          }
+
+          if (applyOptionsDifferencesDeep(target, descriptorRest)) {
+            updated = true;
+          }
+
+          return updated;
         }
 
-        if (options.identity) {
-          if (app.identity == null) {
-            app.identity = options.identity;
-            upsertRequired = true;
-          } else if (applyIdentityOptions(app.identity, options.identity)) {
-            upsertRequired = true;
-          }
+        app.template ??= {};
+        if (applyTemplateOptions(app.template, template)) {
+          upsertRequired = true;
         }
+      }
+
+      if (applyOptionsDifferencesShallow(app, descriptorRest)) {
+        upsertRequired = true;
       }
     } else {
       if (location == null) {
@@ -303,14 +529,11 @@ export class ContainerAppTools {
       app = {
         name,
         location,
+        identity,
+        configuration,
+        template,
+        ...descriptorRest,
       };
-
-      if (options) {
-        app.configuration = options.configuration;
-        app.environmentId = options.environmentId;
-        app.identity = options.identity;
-        app.template = options.template;
-      }
     }
 
     if (upsertRequired) {
@@ -334,7 +557,7 @@ export class ContainerAppTools {
     );
   }
 
-  #buildMergedOptions(options?: ContainerAppToolsCommonOptions | null) {
+  #buildMergedOptions(options?: ContainerAppToolsOptions | null) {
     if (options == null) {
       return this.#options;
     }
@@ -349,7 +572,7 @@ export class ContainerAppTools {
     return merged;
   }
 
-  #buildInvokerOptions(options?: ContainerAppToolsCommonOptions | null): AzCliOptions {
+  #buildInvokerOptions(options?: ContainerAppToolsOptions | null): AzCliOptions {
     const mergedOptions = this.#buildMergedOptions(options);
     const result: AzCliOptions = {
       forceAzCommandPrefix: true,
@@ -370,7 +593,7 @@ export class ContainerAppTools {
     return result;
   }
 
-  #getLaxInvokerFn(options?: ContainerAppToolsCommonOptions): AzCliTemplateFn<null> {
+  #getLaxInvokerFn(options?: ContainerAppToolsOptions): AzCliTemplateFn<null> {
     return this.#invoker({
       ...this.#buildInvokerOptions(options),
       allowBlanks: true,

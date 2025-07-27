@@ -40,7 +40,7 @@ export function applyOptionsDifferencesShallow<TTarget extends TSource, TSource 
   return changesApplied;
 }
 
-export function applyDescriptorOptionsDeep<TTarget extends TSource, TSource extends object>(
+export function applyOptionsDifferencesDeep<TTarget extends TSource, TSource extends object>(
   target: TTarget,
   source: TSource,
 ): boolean {
@@ -56,7 +56,7 @@ export function applyDescriptorOptionsDeep<TTarget extends TSource, TSource exte
       changesApplied = true;
       (target as TSource)[key] = value;
     } else if (value != null && typeof value === "object" && target[key] != null) {
-      if (applyDescriptorOptionsDeep(target[key], value)) {
+      if (applyOptionsDifferencesDeep(target[key], value)) {
         changesApplied = true;
       }
     } else if (value !== target[key]) {
@@ -134,4 +134,53 @@ export function applyArrayIdDescriptors<T extends { id?: string }>(
     s => ({ id: s.id }) as T,
     options,
   );
+}
+
+export function applyObjectKeyProperties<TTarget extends TSource, TSource extends object>(
+  target: TTarget,
+  source: TSource,
+  onAdd?: (key: keyof TSource, target: TTarget, source: TSource) => boolean | void,
+  onRemove?: boolean | ((key: keyof TSource, target: TTarget) => boolean | void),
+  onMatch?: (key: keyof TSource, target: TTarget, source: TSource) => boolean | void,
+) {
+  let updated = false;
+  const sourceKeys = Object.keys(source) as (keyof TSource)[];
+  const targetKeys = Object.keys(target) as (keyof TSource)[];
+
+  if (onRemove != null && onRemove !== false) {
+    const removeFn: (key: keyof TSource) => void =
+      onRemove === true
+        ? k => {
+            delete target[k];
+            updated = true;
+          }
+        : k => {
+            if (onRemove(k, target) !== false) {
+              updated = true;
+            }
+          };
+    targetKeys.filter(k => !sourceKeys.includes(k)).forEach(removeFn);
+  }
+
+  if (onAdd != null) {
+    sourceKeys
+      .filter(k => !targetKeys.includes(k))
+      .forEach(k => {
+        if (onAdd(k, target, source) !== false) {
+          updated = true;
+        }
+      });
+  }
+
+  if (onMatch != null) {
+    sourceKeys
+      .filter(k => targetKeys.includes(k))
+      .forEach(k => {
+        if (onMatch(k, target, source) !== false) {
+          updated = true;
+        }
+      });
+  }
+
+  return updated;
 }

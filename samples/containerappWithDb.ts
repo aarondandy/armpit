@@ -1,7 +1,6 @@
 import { az, NameHash } from "armpit";
 import mssql from "mssql";
 import type { PrivateEndpoint } from "@azure/arm-network";
-import type { ManagedEnvironment, ContainerApp } from "@azure/arm-appcontainers";
 import type { Server as SqlServer, Database as SqlDatabase } from "@azure/arm-sql";
 import { loadMyEnvironment } from "./utils/state.js";
 
@@ -108,26 +107,40 @@ runOnDb(async pool => {
 // Services
 // --------
 
-const containerAppEnv = (async () => rg<ManagedEnvironment>`containerapp env create
-  --name appenv-sample-${resourceHash}-${rg.location}
-  --enable-workload-profiles true --logs-destination none
-  --infrastructure-subnet-resource-id ${(await getSubnet("app")).id}`)();
+const containerAppEnv = (async () =>
+  rg.containerApp.envUpsert(`appenv-sample-${resourceHash}-${rg.location}`, {
+    vnetConfiguration: { infrastructureSubnetId: (await getSubnet("app")).id },
+    workloadProfiles: [{ name: "Consumption", workloadProfileType: "Consumption" }],
+  }))();
 containerAppEnv.then(appEnv => console.log(`[app] app environment ${appEnv.name} ready via ${appEnv.staticIp}`));
-
-// TODO: reduce the line breaks that come from containerapp commands. Likely due to a progress spinner.
 
 const app = (async () => {
   const sqlConnectionString = `Server=${(await dbServer).name}.database.windows.net;Database=${(await db).name};Authentication=Active Directory Managed Identity;`;
-  const envVars = [`ConnectionStrings__MyDatabase=${sqlConnectionString}`, "FOO=BAR"];
 
-  // TODO: Remaking the app each time causes issues. An upsert would work much better.
-  const app = await rg<ContainerApp>`containerapp create
-    --name app-sample-${resourceHash} --environment ${(await containerAppEnv).id}
-    --image ${"aarondandy/numbers:latest"}
-    --ingress external --target-port 8080
-    --env-vars ${envVars}
-    --system-assigned`;
-  console.log(`[app] ${app.name} recreated`);
+  const app = await rg.containerApp.appUpsert(`app-sample-${resourceHash}`, {
+    environmentId: (await containerAppEnv).id,
+    workloadProfileName: "Consumption",
+    template: {
+      containers: [
+        {
+          name: "numbers-sample",
+          image: "aarondandy/numbers:latest",
+          env: [
+            { name: "ConnectionStrings__MyDatabase", value: sqlConnectionString },
+            { name: "FOO", value: "BAR" },
+          ],
+        },
+      ],
+    },
+    configuration: {
+      ingress: {
+        external: true,
+        targetPort: 8080,
+      },
+    },
+    identity: { type: "SystemAssigned" },
+  });
+  console.log(`[app] ${app.name} ready`);
 
   // permission app to DB
   await runOnDb(async pool => {
@@ -141,10 +154,6 @@ const app = (async () => {
     await pool.request().query(statements.join("\n"));
   });
   console.log(`[app] ${app.name} database access granted`);
-
-  // TODO: avoid this redundant update by performing some kind of upsert instead
-  await rg`containerapp update --name ${app.name} --replace-env-vars ${envVars}`;
-  console.log("[app] set env vars");
 
   return app;
 })();

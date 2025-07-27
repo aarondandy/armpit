@@ -77,10 +77,16 @@ export function isStringValueArrayEqual<T extends string | null | undefined>(
   return true;
 }
 
-export function isArrayEqual<T>(a: T[], b: T[], equals: (a: T, b: T) => boolean) {
+export function isArrayEqual<T>(a: T[], b: T[], equals?: (a: T, b: T) => boolean) {
   if (a.length !== b.length) {
     return false;
   }
+
+  if (a.length === 0) {
+    return true;
+  }
+
+  equals ??= (a, b) => a == b;
 
   for (let i = 0; i < a.length; i++) {
     if (!equals(a[i], b[i])) {

@@ -13,12 +13,13 @@ const rg = await az.group(`samples-${targetLocation}`, targetLocation, targetEnv
 const resourceHash = new NameHash(targetEnvironment.subscriptionId, rg.name, { defaultLength: 6 });
 
 const appEnv = await rg.containerApp.envUpsert(`appenv-sample-${resourceHash}-${rg.location}`, {
-  appLogsConfiguration: { destination: undefined },
+  workloadProfiles: [{ name: "Consumption", workloadProfileType: "Consumption" }],
 });
 console.log(`[app] app environment ${appEnv.name} ready via ${appEnv.staticIp}`);
 
 const app = await rg.containerApp.appUpsert(`app-aspnetsample-${resourceHash}-${rg.location}`, {
   environmentId: appEnv.id,
+  workloadProfileName: "Consumption",
   template: {
     containers: [
       {
@@ -36,6 +37,4 @@ const app = await rg.containerApp.appUpsert(`app-aspnetsample-${resourceHash}-${
   },
   identity: { type: "SystemAssigned" },
 });
-console.log(`[app] ${app.name} recreated`);
-
 console.log(`[app] app revision ready ${"https://" + app.latestRevisionFqdn}`);
