@@ -8,6 +8,10 @@ import type {
   KnownSecurityRuleDirection,
   KnownSecurityRuleAccess,
   KnownSecurityRuleProtocol,
+  KnownVirtualNetworkPrivateEndpointNetworkPolicies,
+  KnownVirtualNetworkPrivateLinkServiceNetworkPolicies,
+  KnownSharingScope,
+  KnownPrivateEndpointVNetPolicies,
 } from "@azure/arm-network";
 import { NetworkManagementClient } from "@azure/arm-network";
 import type {
@@ -17,36 +21,53 @@ import type {
   KnownResolutionPolicy,
 } from "@azure/arm-privatedns";
 import { PrivateDnsManagementClient } from "@azure/arm-privatedns";
-import { isStringValueOrValueArrayEqual, isArrayEqualUnordered, mergeAbortSignals } from "./tsUtils.js";
-import { shallowMergeDefinedValues, shallowCloneDefinedValues } from "./optionsUtils.js";
+import { isArrayEqualUnordered, mergeAbortSignals } from "./tsUtils.js";
+import {
+  shallowMergeDefinedValues,
+  shallowCloneDefinedValues,
+  applyOptionsDifferencesShallow,
+  applyArrayKeyedDescriptor,
+  applyArrayIdDescriptors,
+} from "./optionsUtils.js";
 import {
   type SubscriptionId,
   extractSubscriptionFromId,
-  idsEquals,
   isResourceId,
   locationNameOrCodeEquals,
 } from "./azureUtils.js";
 import { handleGet, ManagementClientFactory } from "./azureSdkUtils.js";
 import type { AzCliOptions, AzCliInvoker, AzCliTemplateFn } from "./azCliInvoker.js";
 
-interface NetworkToolsCommonOptions {
+interface NetworkToolsOptions {
   groupName?: string | null;
   location?: string | null;
   subscriptionId?: SubscriptionId | null;
   abortSignal?: AbortSignal;
 }
 
-type NetworkToolsConstructorOptions = NetworkToolsCommonOptions;
+function splitNetworkOptionsAndDescriptor<T extends NetworkToolsOptions>(optionsDescriptor: T) {
+  const { groupName, location, subscriptionId, abortSignal, ...rest } = optionsDescriptor;
+  return {
+    options: { groupName, location, subscriptionId, abortSignal } as NetworkToolsOptions,
+    descriptor: rest,
+  };
+}
 
-interface CommonPrivateDnsOptions {
+interface PrivateDnsToolsOptions {
   groupName?: string | null;
   subscriptionId?: SubscriptionId | null;
   abortSignal?: AbortSignal;
 }
 
-type PrivateZoneUpsertOptions = CommonPrivateDnsOptions;
+function splitPrivateDnsOptionsAndDescriptor<T extends PrivateDnsToolsOptions>(optionsDescriptor: T) {
+  const { groupName, subscriptionId, abortSignal, ...rest } = optionsDescriptor;
+  return {
+    options: { groupName, subscriptionId, abortSignal } as PrivateDnsToolsOptions,
+    descriptor: rest,
+  };
+}
 
-interface PrivateZoneVnetLinkUpsertOptions extends CommonPrivateDnsOptions {
+interface PrivateZoneVnetLinkDescriptor {
   virtualNetwork: { id?: string } | string;
   registrationEnabled?: boolean;
   resolutionPolicy?: `${KnownResolutionPolicy}`;
@@ -54,11 +75,46 @@ interface PrivateZoneVnetLinkUpsertOptions extends CommonPrivateDnsOptions {
 
 type DelegationDescriptor = Pick<Delegation, "name" | "serviceName">;
 
-interface SubnetDescriptor extends Pick<Subnet, "name" | "addressPrefix" | "networkSecurityGroup"> {
-  // TODO: addressPrefixes, routeTable, natGateway, serviceEndpoints, serviceEndpointPolicies
-  // TODO: privateEndpointNetworkPolicies, privateLinkServiceNetworkPolicies, applicationGatewayIPConfigurations
-  // TODO: sharingScope, defaultOutboundAccess, ipamPoolPrefixAllocations
+interface SubnetDescriptor extends Pick<Subnet, "name" | "addressPrefix" | "addressPrefixes"> {
+  // TODO: networkSecurityGroup
+  // TODO: routeTable
+  // TODO: serviceEndpoints, serviceEndpointPolicies
+  // TODO: ipAllocations
+  // TODO: ipamPoolPrefixAllocations
   delegations?: DelegationDescriptor | string | (DelegationDescriptor | string)[];
+  networkSecurityGroup?: { id?: string };
+  natGateway?: { id?: string };
+  privateEndpointNetworkPolicies?: `${KnownVirtualNetworkPrivateEndpointNetworkPolicies}`;
+  privateLinkServiceNetworkPolicies?: `${KnownVirtualNetworkPrivateLinkServiceNetworkPolicies}`;
+  sharingScope?: `${KnownSharingScope}`;
+  defaultOutboundAccess?: boolean;
+}
+
+interface VnetDescriptor extends Pick<VirtualNetwork, "flowTimeoutInMinutes"> {
+  // TODO: dhcpOptions
+  // TODO: virtualNetworkPeerings
+  // TODO: enableDdosProtection, ddosProtectionPlan
+  // TODO: enableVmProtection
+  // TODO: bgpCommunities
+  // TODO: encryption
+  // TODO: ipAllocations
+  addressSpace?: { addressPrefixes?: string[] };
+  addressPrefix?: string;
+  subnets?: SubnetDescriptor[];
+  deleteUnknownSubnets?: boolean;
+  privateEndpointVNetPolicies?: `${KnownPrivateEndpointVNetPolicies}`;
+}
+
+interface SecurityRuleDescriptor extends Omit<SecurityRule, "id" | "etag" | "type"> {
+  priority: number;
+  direction: `${KnownSecurityRuleDirection}`;
+  access: `${KnownSecurityRuleAccess}`;
+  protocol: `${KnownSecurityRuleProtocol}`;
+}
+
+interface NsgDescriptor {
+  rules?: SecurityRuleDescriptor[];
+  deleteUnknownRules?: boolean;
 }
 
 function assignDelegateNames(delegations: Delegation[]) {
@@ -79,170 +135,67 @@ function assignDelegateNames(delegations: Delegation[]) {
   }
 }
 
-function isDelegationEqual(a: Delegation, b: Delegation) {
-  if (a == null) {
-    return b == null;
-  }
-
-  if (b == null) {
-    return false;
-  }
-
-  return a.name === b.name && a.serviceName === b.serviceName;
-}
-
-function isSubnetEqual(a: Subnet, b: Subnet) {
-  if (a == null) {
-    return b == null;
-  }
-
-  if (b == null) {
-    return false;
-  }
-
-  if (a.name != b.name || a.networkSecurityGroup?.id !== b.networkSecurityGroup?.id) {
-    return false;
-  }
-
-  if (!isStringValueOrValueArrayEqual(a.addressPrefix ?? a.addressPrefixes, b.addressPrefix ?? b.addressPrefixes)) {
-    return false;
-  }
-
-  if (!isArrayEqualUnordered(a.delegations ?? [], b.delegations ?? [], isDelegationEqual)) {
-    return false;
-  }
-
-  return true;
-}
-
-interface VnetUpsertOptions extends NetworkToolsCommonOptions {
-  addressPrefix?: string;
-  subnets?: SubnetDescriptor[];
-  deleteUnknownSubnets?: boolean;
-}
-
-interface SecurityRuleDescriptor extends Omit<SecurityRule, "etag" | "type"> {
-  priority: number;
-  direction: `${KnownSecurityRuleDirection}`;
-  access: `${KnownSecurityRuleAccess}`;
-  protocol: `${KnownSecurityRuleProtocol}`;
-}
-
 function isNsgAccessType(access: unknown): access is "Allow" | "Deny" {
   return access === "Allow" || access === "Deny";
 }
 
-function assignMissingRequiredSecurityRuleOptions(rule: SecurityRule) {
-  if (!rule.protocol) {
-    rule.protocol = "*";
+function pluralPropPairsAreEqual<T>(
+  a: T | null | undefined,
+  aMulti: T[] | null | undefined,
+  b: T | null | undefined,
+  bMulti: T[] | null | undefined,
+  equals?: (a: T, b: T) => boolean,
+) {
+  equals ??= (a, b) => a == b;
+
+  if (aMulti == null && bMulti == null) {
+    if (a == null) {
+      return b == null;
+    }
+    if (b == null) {
+      return false;
+    }
+
+    return equals(a, b);
   }
 
-  if (!(rule.sourceAddressPrefix || rule.sourceAddressPrefixes || rule.sourceApplicationSecurityGroups)) {
-    rule.sourceAddressPrefix = "*";
+  const aNormalized = [];
+  if (aMulti != null) {
+    aNormalized.push(...aMulti);
+  }
+  if (a != null && !aNormalized.includes(a)) {
+    aNormalized.push(a);
   }
 
-  if (!(rule.sourcePortRange || rule.sourcePortRanges)) {
-    rule.sourcePortRange = "*";
+  const bNormalized = [];
+  if (bMulti != null) {
+    bNormalized.push(...bMulti);
+  }
+  if (b != null && !bNormalized.includes(b)) {
+    bNormalized.push(b);
   }
 
-  if (
-    !(rule.destinationAddressPrefix || rule.destinationAddressPrefixes || rule.destinationApplicationSecurityGroups)
-  ) {
-    rule.destinationAddressPrefix = "*";
-  }
-
-  if (!(rule.destinationPortRange || rule.destinationPortRanges)) {
-    rule.destinationPortRange = "*";
-  }
-}
-
-function isSecurityRuleEqual(a: SecurityRule, b: SecurityRule) {
-  if (a == null) {
-    return b == null;
-  }
-
-  if (b == null) {
-    return false;
-  }
-
-  if (
-    a.name != b.name ||
-    a.description != b.description ||
-    a.protocol !== b.protocol ||
-    a.access !== b.access ||
-    a.priority !== b.priority ||
-    a.direction !== b.direction
-  ) {
-    return false;
-  }
-
-  if (
-    !isStringValueOrValueArrayEqual(a.sourcePortRange ?? a.sourcePortRanges, b.sourcePortRange ?? b.sourcePortRanges)
-  ) {
-    return false;
-  }
-
-  if (
-    !isStringValueOrValueArrayEqual(
-      a.destinationPortRange ?? a.destinationPortRanges,
-      b.destinationPortRange ?? b.destinationPortRanges,
-    )
-  ) {
-    return false;
-  }
-
-  if (
-    !isStringValueOrValueArrayEqual(
-      a.sourceAddressPrefix ?? a.sourceAddressPrefixes,
-      b.sourceAddressPrefix ?? b.sourceAddressPrefixes,
-    )
-  ) {
-    return false;
-  }
-
-  if (
-    !isStringValueOrValueArrayEqual(
-      a.destinationAddressPrefix ?? a.destinationAddressPrefixes,
-      b.destinationAddressPrefix ?? b.destinationAddressPrefixes,
-    )
-  ) {
-    return false;
-  }
-
-  if (!idsEquals(a.sourceApplicationSecurityGroups, b.sourceApplicationSecurityGroups, true)) {
-    return false;
-  }
-
-  if (!idsEquals(a.destinationApplicationSecurityGroups, b.destinationApplicationSecurityGroups, true)) {
-    return false;
-  }
-
-  return true;
-}
-
-interface NsgUpsertOptions extends NetworkToolsCommonOptions {
-  rules?: SecurityRuleDescriptor[];
-  deleteUnknownRules?: boolean;
+  return isArrayEqualUnordered(aNormalized, bNormalized, equals);
 }
 
 export class NetworkTools {
   #invoker: AzCliInvoker;
   #managementClientFactory: ManagementClientFactory;
-  #options: NetworkToolsConstructorOptions;
+  #options: NetworkToolsOptions;
 
   constructor(
     dependencies: {
       invoker: AzCliInvoker;
       managementClientFactory: ManagementClientFactory;
     },
-    options: NetworkToolsConstructorOptions,
+    options: NetworkToolsOptions,
   ) {
     this.#invoker = dependencies.invoker;
     this.#managementClientFactory = dependencies.managementClientFactory;
     this.#options = shallowCloneDefinedValues(options);
   }
 
-  async vnetGet(name: string, options?: NetworkToolsCommonOptions): Promise<VirtualNetwork | null> {
+  async vnetGet(name: string, options?: NetworkToolsOptions): Promise<VirtualNetwork | null> {
     const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
     if (subscriptionId != null && groupName != null) {
       const client = this.getClient(subscriptionId);
@@ -257,18 +210,33 @@ export class NetworkTools {
     return this.#getLaxInvokerFn(options)<NetworkSecurityGroup>`network vnet show ${args}`;
   }
 
-  async vnetUpsert(name: string, options?: VnetUpsertOptions): Promise<VirtualNetwork> {
+  async vnetUpsert(name: string, optionsDescriptor?: VnetDescriptor & NetworkToolsOptions): Promise<VirtualNetwork> {
+    const {
+      options,
+      descriptor: { deleteUnknownSubnets, subnets, addressPrefix, addressSpace, ...descriptorRest },
+    } = optionsDescriptor ? splitNetworkOptionsAndDescriptor(optionsDescriptor) : { descriptor: {} };
     const opContext = this.#buildMergedOptions(options);
 
     if (opContext.groupName == null) {
       throw new Error("A group name is required to perform network operations.");
     }
 
+    let addressSpaceDescriptor: VnetDescriptor["addressSpace"];
+    if (addressPrefix != null && addressSpace != null) {
+      throw new Error("Can only specify one of addressPrefix or addressSpace");
+    } else if (addressPrefix != null) {
+      addressSpaceDescriptor = { addressPrefixes: [addressPrefix] };
+    } else if (addressSpace != null) {
+      addressSpaceDescriptor = addressSpace;
+    } else {
+      addressSpaceDescriptor = undefined;
+    }
+
     let upsertRequired = false;
     let vnet = await this.vnetGet(name, options);
 
-    const desiredSubnets = options?.subnets?.map(descriptor => {
-      const { delegations, networkSecurityGroup, ...descriptorRest } = descriptor;
+    const subnetsNew = subnets?.map(descriptor => {
+      const { networkSecurityGroup, delegations, ...descriptorRest } = descriptor;
 
       const result = {
         ...descriptorRest,
@@ -282,11 +250,72 @@ export class NetworkTools {
         result.delegations = (Array.isArray(delegations) ? delegations : [delegations]).map(d =>
           typeof d === "string" ? { serviceName: d } : { ...d },
         );
-        assignDelegateNames(result.delegations);
+        assignDelegateNames(result.delegations); // TODO: This should be done at the time of the assignment for best compatibility with existing data
       }
 
       return result;
     });
+
+    function applySubnetDifferences(target: Subnet, source: Subnet) {
+      const {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        id: id,
+        name: name,
+        addressPrefix,
+        addressPrefixes,
+        delegations,
+        networkSecurityGroup,
+        natGateway,
+        ...sourceRest
+      } = source;
+
+      let appliedChanges = false;
+
+      if (target.name == null) {
+        target.name = name;
+        appliedChanges = true;
+      }
+
+      if (applyOptionsDifferencesShallow(target, sourceRest)) {
+        appliedChanges = true;
+      }
+
+      if (!pluralPropPairsAreEqual(target.addressPrefix, target.addressPrefixes, addressPrefix, addressPrefixes)) {
+        target.addressPrefix = addressPrefix;
+        target.addressPrefixes = addressPrefixes;
+        appliedChanges = true;
+      }
+
+      if (delegations) {
+        target.delegations ??= [];
+        if (
+          applyArrayKeyedDescriptor(
+            target.delegations,
+            delegations,
+            "serviceName",
+            applyOptionsDifferencesShallow,
+            shallowCloneDefinedValues,
+            {
+              deleteUnmatchedTargets: deleteUnknownSubnets,
+            },
+          )
+        ) {
+          appliedChanges = true;
+        }
+      }
+
+      if (networkSecurityGroup?.id != null && target.networkSecurityGroup?.id != networkSecurityGroup.id) {
+        target.networkSecurityGroup = { id: networkSecurityGroup.id };
+        appliedChanges = true;
+      }
+
+      if (natGateway?.id != null && target.natGateway?.id != natGateway.id) {
+        target.natGateway = { id: natGateway.id };
+        appliedChanges = true;
+      }
+
+      return appliedChanges;
+    }
 
     let subscriptionId = opContext.subscriptionId;
     const location = opContext.location;
@@ -298,65 +327,37 @@ export class NetworkTools {
         throw new Error(`Specified location ${location} conflicts with existing ${vnet.location}.`);
       }
 
-      if (options?.addressPrefix) {
+      if (addressSpaceDescriptor) {
         vnet.addressSpace ??= {};
-        vnet.addressSpace.addressPrefixes ??= [];
-
-        if (vnet.addressSpace.addressPrefixes.length > 2) {
-          throw new Error("Multiple address space prefixes are not supported");
-        }
-
-        if (
-          vnet.addressSpace.addressPrefixes.length !== 1 ||
-          vnet.addressSpace.addressPrefixes[0] !== options.addressPrefix
-        ) {
-          upsertRequired = true;
-          vnet.addressSpace.addressPrefixes = [options.addressPrefix];
+        if (addressSpaceDescriptor.addressPrefixes != null) {
+          vnet.addressSpace.addressPrefixes ??= [];
+          if (!isArrayEqualUnordered(vnet.addressSpace.addressPrefixes, addressSpaceDescriptor.addressPrefixes)) {
+            vnet.addressSpace.addressPrefixes = addressSpaceDescriptor.addressPrefixes;
+            upsertRequired = true;
+          }
         }
       }
 
-      if (desiredSubnets != null) {
-        const existingSubnets = vnet.subnets == null ? [] : [...vnet.subnets];
-        const upsertSubnets: Subnet[] = [];
-
-        for (let desiredIndex = 0; desiredIndex < desiredSubnets.length; ) {
-          const desired = desiredSubnets[desiredIndex];
-          let existingIndex = existingSubnets.findIndex(e => e.name === desired.name);
-          if (existingIndex < 0 && desired.addressPrefix != null) {
-            existingIndex = existingSubnets.findIndex(e =>
-              isStringValueOrValueArrayEqual(e.addressPrefix ?? e.addressPrefixes, desired.addressPrefix),
-            );
-          }
-
-          const existing = existingIndex >= 0 ? existingSubnets[existingIndex] : null;
-          if (existing == null) {
-            desiredIndex++;
-          } else {
-            desiredSubnets.splice(desiredIndex, 1);
-            existingSubnets.splice(existingIndex, 1);
-            upsertSubnets.push({
-              ...existing,
-              ...desired,
-              etag: existing.etag,
-              type: existing.type,
-            });
-          }
-        }
-
-        if (options?.deleteUnknownSubnets !== true && existingSubnets.length > 0) {
-          // preserve unmatched existing
-          upsertSubnets.push(...existingSubnets);
-        }
-
-        if (desiredSubnets.length > 0) {
-          // unmatched new rules
-          upsertSubnets.push(...desiredSubnets);
-        }
-
-        if (!isArrayEqualUnordered(vnet.subnets ?? [], upsertSubnets, isSubnetEqual)) {
+      if (subnetsNew) {
+        vnet.subnets ??= [];
+        if (
+          applyArrayKeyedDescriptor(
+            vnet.subnets,
+            subnetsNew,
+            "name",
+            applySubnetDifferences,
+            shallowCloneDefinedValues,
+            {
+              deleteUnmatchedTargets: deleteUnknownSubnets,
+            },
+          )
+        ) {
           upsertRequired = true;
-          vnet.subnets = upsertSubnets;
         }
+      }
+
+      if (applyOptionsDifferencesShallow(vnet, descriptorRest)) {
+        upsertRequired = true;
       }
     } else {
       upsertRequired = true;
@@ -368,13 +369,16 @@ export class NetworkTools {
         vnet.location = location;
       }
 
-      if (options?.addressPrefix) {
-        vnet.addressSpace = { addressPrefixes: [options.addressPrefix] };
+      if (addressSpaceDescriptor) {
+        vnet.addressSpace = addressSpaceDescriptor;
+      }
+      vnet.addressSpace = addressPrefix ? { addressPrefixes: [addressPrefix] } : addressSpace;
+
+      if (subnetsNew != null) {
+        vnet.subnets = subnetsNew;
       }
 
-      if (desiredSubnets && desiredSubnets.length > 0) {
-        vnet.subnets = desiredSubnets;
-      }
+      applyOptionsDifferencesShallow(vnet, descriptorRest);
     }
 
     if (upsertRequired) {
@@ -387,7 +391,7 @@ export class NetworkTools {
     return vnet;
   }
 
-  async nsgGet(name: string, options?: NetworkToolsCommonOptions): Promise<NetworkSecurityGroup | null> {
+  async nsgGet(name: string, options?: NetworkToolsOptions): Promise<NetworkSecurityGroup | null> {
     const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
     if (subscriptionId != null && groupName != null) {
       const client = this.getClient(subscriptionId);
@@ -402,32 +406,157 @@ export class NetworkTools {
     return this.#getLaxInvokerFn(options)<NetworkSecurityGroup>`network nsg show ${args}`;
   }
 
-  async nsgUpsert(name: string, options?: NsgUpsertOptions): Promise<NetworkSecurityGroup> {
+  async nsgUpsert(
+    name: string,
+    descriptorOptions?: NsgDescriptor & NetworkToolsOptions,
+  ): Promise<NetworkSecurityGroup> {
+    const {
+      options,
+      descriptor: { rules, deleteUnknownRules, ...descriptorRest },
+    } = descriptorOptions ? splitNetworkOptionsAndDescriptor(descriptorOptions) : { descriptor: {} };
+
     const opContext = this.#buildMergedOptions(options);
 
     if (opContext.groupName == null) {
       throw new Error("A group name is required to perform NSG operations.");
     }
 
-    if (options && options.deleteUnknownRules && options.rules == null) {
+    if (deleteUnknownRules && rules == null) {
       throw new Error("Rules must be explicitly described when deleting unknown rules is requested");
     }
 
-    const desiredRules = options?.rules?.map(d => {
-      const result = { ...d }; // a shallow clone should be safe enough
-      assignMissingRequiredSecurityRuleOptions(result);
-      return result as SecurityRule;
+    if (rules != null && rules.length > 0 && rules.some(r => !isNsgAccessType(r.access))) {
+      throw new Error("All NSG rules must specify access explicitly.");
+    }
+
+    let upsertRequired = false;
+    let nsg = await this.nsgGet(name, options);
+
+    const nsgRulesNew = rules?.map(d => {
+      const rule: SecurityRule = { ...d }; // a shallow clone should be safe enough
+      if (!rule.protocol) {
+        rule.protocol = "*";
+      }
+
+      if (!(rule.sourceAddressPrefix || rule.sourceAddressPrefixes || rule.sourceApplicationSecurityGroups)) {
+        rule.sourceAddressPrefix = "*";
+      }
+
+      if (!(rule.sourcePortRange || rule.sourcePortRanges)) {
+        rule.sourcePortRange = "*";
+      }
+
+      if (
+        !(rule.destinationAddressPrefix || rule.destinationAddressPrefixes || rule.destinationApplicationSecurityGroups)
+      ) {
+        rule.destinationAddressPrefix = "*";
+      }
+
+      if (!(rule.destinationPortRange || rule.destinationPortRanges)) {
+        rule.destinationPortRange = "*";
+      }
+
+      return rule;
     });
 
-    if (desiredRules && desiredRules.length > 0 && desiredRules.some(r => !isNsgAccessType(r.access))) {
-      throw new Error("All NSG rules must specify access explicitly.");
+    function applySecurityRuleDifferences(target: SecurityRule, source: SecurityRule) {
+      const {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        id: id,
+        name: name,
+        sourcePortRange,
+        sourcePortRanges,
+        destinationPortRange,
+        destinationPortRanges,
+        sourceAddressPrefix,
+        sourceAddressPrefixes,
+        destinationAddressPrefix,
+        destinationAddressPrefixes,
+        sourceApplicationSecurityGroups,
+        destinationApplicationSecurityGroups,
+        ...sourceRest
+      } = source;
+
+      let appliedChanges = false;
+
+      if (target.name == null) {
+        target.name = name;
+        appliedChanges = true;
+      }
+
+      if (applyOptionsDifferencesShallow(target, sourceRest)) {
+        appliedChanges = true;
+      }
+
+      if (
+        !pluralPropPairsAreEqual(target.sourcePortRange, target.sourcePortRanges, sourcePortRange, sourcePortRanges)
+      ) {
+        target.sourcePortRange = sourcePortRange;
+        target.sourcePortRanges = sourcePortRanges;
+        appliedChanges = true;
+      }
+
+      if (
+        !pluralPropPairsAreEqual(
+          target.destinationPortRange,
+          target.destinationPortRanges,
+          destinationPortRange,
+          destinationPortRanges,
+        )
+      ) {
+        target.destinationPortRange = destinationPortRange;
+        target.destinationPortRanges = destinationPortRanges;
+        appliedChanges = true;
+      }
+
+      if (
+        !pluralPropPairsAreEqual(
+          target.sourceAddressPrefix,
+          target.sourceAddressPrefixes,
+          sourceAddressPrefix,
+          sourceAddressPrefixes,
+        )
+      ) {
+        target.sourceAddressPrefix = sourceAddressPrefix;
+        target.sourceAddressPrefixes = sourceAddressPrefixes;
+        appliedChanges = true;
+      }
+
+      if (
+        !pluralPropPairsAreEqual(
+          target.destinationAddressPrefix,
+          target.destinationAddressPrefixes,
+          destinationAddressPrefix,
+          destinationAddressPrefixes,
+        )
+      ) {
+        target.destinationAddressPrefix = destinationAddressPrefix;
+        target.destinationAddressPrefixes = destinationAddressPrefixes;
+        appliedChanges = true;
+      }
+
+      if (sourceApplicationSecurityGroups != null) {
+        target.sourceApplicationSecurityGroups = [];
+        if (applyArrayIdDescriptors(target.sourceApplicationSecurityGroups, sourceApplicationSecurityGroups)) {
+          appliedChanges = true;
+        }
+      }
+
+      if (destinationApplicationSecurityGroups != null) {
+        target.destinationApplicationSecurityGroups = [];
+        if (
+          applyArrayIdDescriptors(target.destinationApplicationSecurityGroups, destinationApplicationSecurityGroups)
+        ) {
+          appliedChanges = true;
+        }
+      }
+
+      return appliedChanges;
     }
 
     let subscriptionId = opContext.subscriptionId;
     const location = opContext.location;
 
-    let upsertRequired = false;
-    let nsg = await this.nsgGet(name, options);
     if (nsg) {
       subscriptionId ??= extractSubscriptionFromId(nsg.id);
 
@@ -435,44 +564,26 @@ export class NetworkTools {
         throw new Error(`Specified location ${location} conflicts with existing ${nsg.location}.`);
       }
 
-      if (desiredRules) {
-        const existingRules = nsg.securityRules == null ? [] : [...nsg.securityRules];
-        const upsertRules: SecurityRule[] = [];
-
-        for (let desiredIndex = 0; desiredIndex < desiredRules.length; ) {
-          const desired = desiredRules[desiredIndex];
-          const existingIndex = existingRules.findIndex(
-            e => e.name === desired.name && e.direction === desired.direction,
-          );
-          const existing = existingIndex >= 0 ? existingRules[existingIndex] : null;
-          if (existing == null) {
-            desiredIndex++;
-          } else {
-            desiredRules.splice(desiredIndex, 1);
-            existingRules.splice(existingIndex, 1);
-            upsertRules.push({
-              ...existing,
-              ...desired,
-              etag: existing.etag,
-              type: existing.type,
-            });
-          }
-        }
-
-        if (options?.deleteUnknownRules !== true && existingRules.length > 0) {
-          // preserve unmatched existing rules
-          upsertRules.push(...existingRules);
-        }
-
-        if (desiredRules.length > 0) {
-          // unmatched new rules
-          upsertRules.push(...desiredRules);
-        }
-
-        if (!isArrayEqualUnordered(nsg.securityRules ?? [], upsertRules, isSecurityRuleEqual)) {
+      if (nsgRulesNew) {
+        nsg.securityRules ??= [];
+        if (
+          applyArrayKeyedDescriptor(
+            nsg.securityRules,
+            nsgRulesNew,
+            "name",
+            applySecurityRuleDifferences,
+            shallowCloneDefinedValues,
+            {
+              deleteUnmatchedTargets: deleteUnknownRules,
+            },
+          )
+        ) {
           upsertRequired = true;
-          nsg.securityRules = upsertRules;
         }
+      }
+
+      if (applyOptionsDifferencesShallow(nsg, descriptorRest)) {
+        upsertRequired = true;
       }
     } else {
       upsertRequired = true;
@@ -484,9 +595,11 @@ export class NetworkTools {
         nsg.location = location;
       }
 
-      if (desiredRules) {
-        nsg.securityRules = desiredRules;
+      if (nsgRulesNew != null) {
+        nsg.securityRules = nsgRulesNew;
       }
+
+      applyOptionsDifferencesShallow(nsg, descriptorRest);
     }
 
     if (upsertRequired) {
@@ -499,10 +612,10 @@ export class NetworkTools {
     return nsg;
   }
 
-  async privateZoneGet(name: string, options?: CommonPrivateDnsOptions): Promise<PrivateZone | null> {
+  async privateZoneGet(name: string, options?: PrivateDnsToolsOptions): Promise<PrivateZone | null> {
     const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
     if (subscriptionId != null && groupName != null) {
-      const client = this.getPrivateZoneClient(subscriptionId);
+      const client = this.getPrivateDnsClient(subscriptionId);
       return await handleGet(client.privateZones.get(groupName, name, { abortSignal }));
     }
 
@@ -514,7 +627,7 @@ export class NetworkTools {
     return this.#getLaxInvokerFn(options)<PrivateZone>`network private-dns zone show ${args}`;
   }
 
-  async privateZoneUpsert(name: string, options?: PrivateZoneUpsertOptions): Promise<PrivateZone> {
+  async privateZoneUpsert(name: string, options?: PrivateDnsToolsOptions): Promise<PrivateZone> {
     const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
     if (groupName == null) {
       throw new Error("A group name is required to perform DNS zone operations");
@@ -522,7 +635,7 @@ export class NetworkTools {
 
     let zone = await this.privateZoneGet(name, options);
     if (zone == null) {
-      const client = this.getPrivateZoneClient(subscriptionId);
+      const client = this.getPrivateDnsClient(subscriptionId);
       zone = await client.privateZones.beginCreateOrUpdateAndWait(
         groupName,
         name,
@@ -534,10 +647,10 @@ export class NetworkTools {
     return zone;
   }
 
-  async privateZoneVnetLinkGet(zoneName: string, name: string, options?: NetworkToolsCommonOptions) {
+  async privateZoneVnetLinkGet(zoneName: string, name: string, options?: NetworkToolsOptions) {
     const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
     if (subscriptionId != null && groupName != null) {
-      const client = this.getPrivateZoneClient(subscriptionId);
+      const client = this.getPrivateDnsClient(subscriptionId);
       return await handleGet(client.virtualNetworkLinks.get(groupName, zoneName, name, { abortSignal }));
     }
 
@@ -549,42 +662,48 @@ export class NetworkTools {
     return this.#getLaxInvokerFn(options)<VirtualNetworkLink>`network private-dns link vnet show ${args}`;
   }
 
-  async privateZoneVnetLinkUpsert(zoneName: string, name: string, options: PrivateZoneVnetLinkUpsertOptions) {
-    const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
-    if (groupName == null) {
+  async privateZoneVnetLinkUpsert(
+    zoneName: string,
+    name: string,
+    descriptorOptions: PrivateZoneVnetLinkDescriptor & PrivateDnsToolsOptions,
+  ) {
+    const { options, descriptor } = splitPrivateDnsOptionsAndDescriptor(descriptorOptions);
+    const { virtualNetwork, ...descriptorRest } = descriptor;
+
+    const opContext = this.#buildMergedOptions(options);
+
+    if (opContext.groupName == null) {
       throw new Error("A group name is required to perform DNS zone link operations");
     }
 
     let virtualNetworkId: string | undefined;
-    if (isResourceId(options.virtualNetwork)) {
-      virtualNetworkId = options.virtualNetwork;
-    } else if (typeof options.virtualNetwork === "string") {
-      const vnetMatch = await this.vnetGet(options.virtualNetwork, options);
+    if (isResourceId(virtualNetwork)) {
+      virtualNetworkId = virtualNetwork;
+    } else if (typeof virtualNetwork === "string") {
+      const vnetMatch = await this.vnetGet(virtualNetwork, options);
       if (vnetMatch == null) {
         throw new Error(`Failed to find vnet '${virtualNetworkId}'`);
       }
 
       virtualNetworkId = vnetMatch.id;
     } else {
-      virtualNetworkId = options.virtualNetwork.id;
+      virtualNetworkId = virtualNetwork.id;
     }
+
+    let subscriptionId = opContext.subscriptionId;
 
     let upsertRequired = false;
     let link = await this.privateZoneVnetLinkGet(zoneName, name, options);
     if (link) {
+      subscriptionId ??= extractSubscriptionFromId(link.id);
+
       if (virtualNetworkId != null && link.virtualNetwork?.id !== virtualNetworkId) {
         link.virtualNetwork = { id: virtualNetworkId };
         upsertRequired = true;
       }
 
-      if (options.registrationEnabled != null && options.registrationEnabled !== link.registrationEnabled) {
+      if (applyOptionsDifferencesShallow(link, descriptorRest as VirtualNetworkLink)) {
         upsertRequired = true;
-        link.registrationEnabled = options.registrationEnabled;
-      }
-
-      if (options.resolutionPolicy != null && options.resolutionPolicy !== link.resolutionPolicy) {
-        upsertRequired = true;
-        link.resolutionPolicy = options.resolutionPolicy;
       }
     } else {
       upsertRequired = true;
@@ -594,19 +713,13 @@ export class NetworkTools {
         virtualNetwork: { id: virtualNetworkId },
       };
 
-      if (options.registrationEnabled != null) {
-        link.registrationEnabled = options.registrationEnabled;
-      }
-
-      if (options.resolutionPolicy != null) {
-        link.resolutionPolicy = options.resolutionPolicy;
-      }
+      applyOptionsDifferencesShallow(link, descriptorRest as VirtualNetworkLink);
     }
 
     if (upsertRequired) {
-      const client = this.getPrivateZoneClient(subscriptionId);
-      link = await client.virtualNetworkLinks.beginCreateOrUpdateAndWait(groupName, zoneName, name, link, {
-        abortSignal,
+      const client = this.getPrivateDnsClient(subscriptionId);
+      link = await client.virtualNetworkLinks.beginCreateOrUpdateAndWait(opContext.groupName, zoneName, name, link, {
+        abortSignal: opContext.abortSignal,
       });
     }
 
@@ -624,7 +737,7 @@ export class NetworkTools {
     );
   }
 
-  getPrivateZoneClient(
+  getPrivateDnsClient(
     subscriptionId?: SubscriptionId | null,
     options?: PrivateDnsManagementClientOptionalParams,
   ): PrivateDnsManagementClient {
@@ -635,7 +748,7 @@ export class NetworkTools {
     );
   }
 
-  #buildMergedOptions(options?: NetworkToolsCommonOptions | null) {
+  #buildMergedOptions(options?: NetworkToolsOptions | null) {
     if (options == null) {
       return this.#options;
     }
@@ -650,7 +763,7 @@ export class NetworkTools {
     return merged;
   }
 
-  #buildInvokerOptions(options?: NetworkToolsCommonOptions | null): AzCliOptions {
+  #buildInvokerOptions(options?: NetworkToolsOptions | null): AzCliOptions {
     const mergedOptions = this.#buildMergedOptions(options);
     const result: AzCliOptions = {
       forceAzCommandPrefix: true,
@@ -671,7 +784,7 @@ export class NetworkTools {
     return result;
   }
 
-  #getLaxInvokerFn(options?: NetworkToolsCommonOptions): AzCliTemplateFn<null> {
+  #getLaxInvokerFn(options?: NetworkToolsOptions): AzCliTemplateFn<null> {
     return this.#invoker({
       ...this.#buildInvokerOptions(options),
       allowBlanks: true,

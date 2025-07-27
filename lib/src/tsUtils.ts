@@ -91,7 +91,7 @@ export function isArrayEqual<T>(a: T[], b: T[], equals: (a: T, b: T) => boolean)
   return true;
 }
 
-export function isArrayEqualUnordered<T>(a: T[], b: T[], equals: (a: T, b: T) => boolean) {
+export function isArrayEqualUnordered<T>(a: T[], b: T[], equals?: (a: T, b: T) => boolean) {
   if (a.length !== b.length) {
     return false;
   }
@@ -99,6 +99,8 @@ export function isArrayEqualUnordered<T>(a: T[], b: T[], equals: (a: T, b: T) =>
   if (a.length === 0) {
     return true;
   }
+
+  equals ??= (a, b) => a == b;
 
   const aSearch = [...a];
   const bSearch = [...b];
