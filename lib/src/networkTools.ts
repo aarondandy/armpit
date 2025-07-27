@@ -117,28 +117,6 @@ interface NsgDescriptor {
   deleteUnknownRules?: boolean;
 }
 
-function assignDelegateNames(delegations: Delegation[]) {
-  for (let index = 0; index < delegations.length; index++) {
-    const delegation = delegations[index];
-    if (delegation.name == null || delegation.name === "") {
-      delegation.name = findNextAvailableNumberName(index);
-    }
-  }
-
-  function findNextAvailableNumberName(index: number) {
-    for (; ; index++) {
-      const nameCandidate = index.toString();
-      if (!delegations.some(d => d.name === nameCandidate)) {
-        return nameCandidate;
-      }
-    }
-  }
-}
-
-function isNsgAccessType(access: unknown): access is "Allow" | "Deny" {
-  return access === "Allow" || access === "Deny";
-}
-
 function pluralPropPairsAreEqual<T>(
   a: T | null | undefined,
   aMulti: T[] | null | undefined,
@@ -236,6 +214,24 @@ export class NetworkTools {
     let vnet = await this.vnetGet(name, options);
 
     const subnetsNew = subnets?.map(descriptor => {
+      function assignDelegateNames(delegations: Delegation[]) {
+        for (let index = 0; index < delegations.length; index++) {
+          const delegation = delegations[index];
+          if (delegation.name == null || delegation.name === "") {
+            delegation.name = findNextAvailableNumberName(index);
+          }
+        }
+
+        function findNextAvailableNumberName(index: number) {
+          for (; ; index++) {
+            const nameCandidate = index.toString();
+            if (!delegations.some(d => d.name === nameCandidate)) {
+              return nameCandidate;
+            }
+          }
+        }
+      }
+
       const { networkSecurityGroup, delegations, ...descriptorRest } = descriptor;
 
       const result = {
@@ -425,7 +421,7 @@ export class NetworkTools {
       throw new Error("Rules must be explicitly described when deleting unknown rules is requested");
     }
 
-    if (rules != null && rules.length > 0 && rules.some(r => !isNsgAccessType(r.access))) {
+    if (rules != null && rules.length > 0 && rules.some(r => r.access == null || (r.access as string) === "")) {
       throw new Error("All NSG rules must specify access explicitly.");
     }
 

@@ -1,5 +1,4 @@
 import { az, NameHash } from "armpit";
-import type { ManagedEnvironment, ContainerApp } from "@azure/arm-appcontainers";
 import { loadMyEnvironment } from "./utils/state.js";
 
 // --------------------------
