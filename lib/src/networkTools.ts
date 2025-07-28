@@ -12,6 +12,10 @@ import type {
   KnownVirtualNetworkPrivateLinkServiceNetworkPolicies,
   KnownSharingScope,
   KnownPrivateEndpointVNetPolicies,
+  PublicIPAddress,
+  KnownIPAllocationMethod,
+  KnownIPVersion,
+  KnownPublicIPAddressSkuName,
 } from "@azure/arm-network";
 import { NetworkManagementClient } from "@azure/arm-network";
 import type {
@@ -28,6 +32,7 @@ import {
   applyOptionsDifferencesShallow,
   applyArrayKeyedDescriptor,
   applyArrayIdDescriptors,
+  applyOptionsDifferencesDeep,
 } from "./optionsUtils.js";
 import {
   type SubscriptionId,
@@ -117,6 +122,19 @@ interface NsgDescriptor {
   deleteUnknownRules?: boolean;
 }
 
+interface PublicIpDescriptor
+  extends Pick<
+    PublicIPAddress,
+    "zones" | "dnsSettings" | "ddosSettings" | "ipAddress" | "publicIPPrefix" | "idleTimeoutInMinutes" | "deleteOption"
+  > {
+  servicePublicIPAddress?: { id?: string };
+  natGateway?: { id?: string };
+  linkedPublicIPAddress?: { id?: string };
+  publicIPAllocationMethod?: `${KnownIPAllocationMethod}`;
+  publicIPAddressVersion?: `${KnownIPVersion}`;
+  sku?: `${KnownPublicIPAddressSkuName}` | PublicIPAddress["sku"];
+}
+
 function pluralPropPairsAreEqual<T>(
   a: T | null | undefined,
   aMulti: T[] | null | undefined,
@@ -154,6 +172,16 @@ function pluralPropPairsAreEqual<T>(
   }
 
   return isArrayEqualUnordered(aNormalized, bNormalized, equals);
+}
+
+function applyResourceIdProperty<TTarget>(target: TTarget, key: keyof TTarget, source?: { id?: string }) {
+  if (source?.id != null && source.id != (target[key] as { id?: string })?.id) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (target as any)[key] = { id: source.id };
+    return true;
+  }
+
+  return false;
 }
 
 export class NetworkTools {
@@ -596,6 +624,122 @@ export class NetworkTools {
     }
 
     return nsg;
+  }
+
+  async pipGet(name: string, options?: NetworkToolsOptions): Promise<PublicIPAddress | null> {
+    const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
+    if (subscriptionId != null && groupName != null) {
+      const client = this.getClient(subscriptionId);
+      return await handleGet(client.publicIPAddresses.get(groupName, name, { abortSignal }));
+    }
+
+    const args = ["--name", name];
+    if (groupName) {
+      args.push("--resource-group", groupName);
+    }
+
+    return this.#getLaxInvokerFn(options)<PublicIPAddress>`network public-ip show ${args}`;
+  }
+
+  async pipUpsert(
+    name: string,
+    descriptorOptions?: PublicIpDescriptor & NetworkToolsOptions,
+  ): Promise<PublicIPAddress> {
+    const {
+      options,
+      descriptor: {
+        sku,
+        linkedPublicIPAddress,
+        natGateway,
+        publicIPPrefix,
+        servicePublicIPAddress,
+        zones,
+        ...descriptorRest
+      },
+    } = descriptorOptions ? splitNetworkOptionsAndDescriptor(descriptorOptions) : { descriptor: {} };
+
+    const opContext = this.#buildMergedOptions(options);
+
+    if (opContext.groupName == null) {
+      throw new Error("A group name is required to perform NSG operations.");
+    }
+
+    const skuDescriptor = typeof sku === "string" ? { name: sku } : sku;
+
+    let upsertRequired = false;
+    let pip = await this.pipGet(name, options);
+
+    let subscriptionId = opContext.subscriptionId;
+    const location = opContext.location;
+
+    if (pip) {
+      subscriptionId ??= extractSubscriptionFromId(pip.id);
+
+      if (location != null && pip.location != null && !locationNameOrCodeEquals(location, pip.location)) {
+        throw new Error(`Specified location ${location} conflicts with existing ${pip.location}.`);
+      }
+
+      if (skuDescriptor != null) {
+        pip.sku ??= {};
+        if (applyOptionsDifferencesDeep(pip.sku, skuDescriptor)) {
+          upsertRequired = true;
+        }
+      }
+
+      if (zones != null) {
+        pip.zones ??= [];
+        if (isArrayEqualUnordered(pip.zones, zones)) {
+          pip.zones = [...zones];
+          upsertRequired = true;
+        }
+      }
+
+      if (applyResourceIdProperty(pip, "linkedPublicIPAddress", linkedPublicIPAddress)) {
+        upsertRequired = true;
+      }
+
+      if (applyResourceIdProperty(pip, "servicePublicIPAddress", servicePublicIPAddress)) {
+        upsertRequired = true;
+      }
+
+      if (applyResourceIdProperty(pip, "natGateway", natGateway)) {
+        upsertRequired = true;
+      }
+
+      if (applyResourceIdProperty(pip, "publicIPPrefix", publicIPPrefix)) {
+        upsertRequired = true;
+      }
+
+      if (applyOptionsDifferencesDeep(pip, descriptorRest)) {
+        upsertRequired = true;
+      }
+    } else {
+      if (location == null) {
+        throw new Error("A location is required");
+      }
+
+      upsertRequired = true;
+      pip = {
+        name,
+        sku: skuDescriptor,
+        location,
+        linkedPublicIPAddress,
+        natGateway,
+        publicIPPrefix,
+        servicePublicIPAddress,
+        zones,
+        ...descriptorRest,
+      };
+    }
+
+    if (upsertRequired) {
+      const client = this.getClient(subscriptionId);
+      pip = await client.publicIPAddresses.beginCreateOrUpdateAndWait(opContext.groupName, name, pip, {
+        abortSignal: opContext.abortSignal,
+      });
+    }
+
+    return pip;
   }
 
   async privateZoneGet(name: string, options?: PrivateDnsToolsOptions): Promise<PrivateZone | null> {

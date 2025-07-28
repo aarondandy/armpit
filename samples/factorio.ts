@@ -85,9 +85,11 @@ if (!state.serverName) {
   await saveState(state);
 }
 
-const pip = rg<PublicIPAddress>`network public-ip create
-  -n pip-${state.serverName} --dns-name ${state.serverName}
-  --allocation-method static --sku standard`;
+const pip = rg.network.pipUpsert(`pip-${state.serverName}`, {
+  dnsSettings: { domainNameLabel: state.serverName },
+  publicIPAllocationMethod: "Static",
+  sku: "Basic",
+});
 pip.then(pip => console.log(`[vm] public ip ${pip.dnsSettings?.fqdn} (${pip.ipAddress})`));
 
 const nic = (async () => rg<NetworkInterface>`network nic create -n nic-${state.serverName}
