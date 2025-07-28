@@ -19,6 +19,11 @@ import type {
   ApplicationSecurityGroup,
   NatGateway,
   KnownNatGatewaySkuName,
+  NetworkInterface,
+  KnownNetworkInterfaceNicType,
+  KnownNetworkInterfaceAuxiliaryMode,
+  KnownNetworkInterfaceAuxiliarySku,
+  NetworkInterfaceIPConfiguration,
   SubResource as NetworkSubResource,
 } from "@azure/arm-network";
 import { NetworkManagementClient } from "@azure/arm-network";
@@ -151,6 +156,33 @@ interface NatGatewayDescriptor
     | "sourceVirtualNetwork"
   > {
   sku: `${KnownNatGatewaySkuName}` | NatGateway["sku"];
+}
+
+interface NetworkInterfaceIPConfigurationDescriptor
+  extends Omit<
+    NetworkInterfaceIPConfiguration,
+    | "id"
+    | "etag"
+    | "type"
+    | "privateIPAllocationMethod"
+    | "privateIPAddressVersion"
+    | "provisioningState"
+    | "privateLinkConnectionProperties"
+  > {
+  privateIPAllocationMethod?: `${KnownIPAllocationMethod}`;
+  privateIPAddressVersion?: `${KnownIPVersion}`;
+}
+
+interface NetworkInterfaceDescriptor
+  extends Pick<
+    NetworkInterface,
+    "enableAcceleratedNetworking" | "disableTcpStateTracking" | "enableIPForwarding" | "workloadType"
+  > {
+  networkSecurityGroup?: NetworkSubResource;
+  nicType?: `${KnownNetworkInterfaceNicType}`;
+  auxiliaryMode?: `${KnownNetworkInterfaceAuxiliaryMode}`;
+  auxiliarySku?: `${KnownNetworkInterfaceAuxiliarySku}`;
+  ipConfigurations: NetworkInterfaceIPConfigurationDescriptor[];
 }
 
 function pluralPropPairsAreEqual<T>(
@@ -431,6 +463,172 @@ export class NetworkTools {
     return nat;
   }
 
+  async nicGet(name: string, options?: NetworkToolsOptions): Promise<NetworkInterface | null> {
+    const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
+    if (subscriptionId != null && groupName != null) {
+      const client = this.getClient(subscriptionId);
+      return await handleGet(client.networkInterfaces.get(groupName, name, { abortSignal }));
+    }
+
+    const args = ["--name", name];
+    if (groupName) {
+      args.push("--resource-group", groupName);
+    }
+
+    return await this.#getLaxInvokerFn(options)<NetworkInterface>`network nic show ${args}`;
+  }
+
+  async nicUpsert(
+    name: string,
+    descriptorOptions: NetworkInterfaceDescriptor & NetworkToolsOptions,
+  ): Promise<NetworkInterface> {
+    const {
+      options,
+      descriptor: { ipConfigurations, networkSecurityGroup, ...descriptorRest },
+    } = splitNetworkOptionsAndDescriptor(descriptorOptions);
+
+    const opContext = this.#buildMergedOptions(options);
+
+    if (opContext.groupName == null) {
+      throw new Error("A group name is required to perform NSG operations.");
+    }
+
+    let upsertRequired = false;
+    let nic = await this.nicGet(name, options);
+
+    let subscriptionId = opContext.subscriptionId;
+    const location = opContext.location;
+
+    if (nic) {
+      subscriptionId ??= extractSubscriptionFromId(nic.id);
+
+      if (location != null && nic.location != null && !locationNameOrCodeEquals(location, nic.location)) {
+        throw new Error(`Specified location ${location} conflicts with existing ${nic.location}.`);
+      }
+
+      if (ipConfigurations != null) {
+        function applyIpConfiguration(
+          target: NetworkInterfaceIPConfiguration,
+          source: NetworkInterfaceIPConfigurationDescriptor,
+        ) {
+          let updated = false;
+          const {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            name,
+            gatewayLoadBalancer,
+            virtualNetworkTaps,
+            applicationGatewayBackendAddressPools,
+            loadBalancerBackendAddressPools,
+            loadBalancerInboundNatRules,
+            subnet,
+            publicIPAddress,
+            applicationSecurityGroups,
+            ...descriptorRest
+          } = source;
+
+          if (applyResourceIdProperty(target, "gatewayLoadBalancer", gatewayLoadBalancer)) {
+            updated = true;
+          }
+
+          if (applyResourceIdProperty(target, "subnet", subnet)) {
+            updated = true;
+          }
+
+          if (applyResourceIdProperty(target, "publicIPAddress", publicIPAddress)) {
+            updated = true;
+          }
+
+          if (virtualNetworkTaps != null) {
+            target.virtualNetworkTaps ??= [];
+            if (setSubResourceIds(target.virtualNetworkTaps, virtualNetworkTaps)) {
+              updated = true;
+            }
+          }
+
+          if (applicationGatewayBackendAddressPools != null) {
+            target.applicationGatewayBackendAddressPools ??= [];
+            if (
+              setSubResourceIds(target.applicationGatewayBackendAddressPools, applicationGatewayBackendAddressPools)
+            ) {
+              updated = true;
+            }
+          }
+
+          if (loadBalancerBackendAddressPools != null) {
+            target.loadBalancerBackendAddressPools ??= [];
+            if (setSubResourceIds(target.loadBalancerBackendAddressPools, loadBalancerBackendAddressPools)) {
+              updated = true;
+            }
+          }
+
+          if (loadBalancerInboundNatRules != null) {
+            target.loadBalancerInboundNatRules ??= [];
+            if (setSubResourceIds(target.loadBalancerInboundNatRules, loadBalancerInboundNatRules)) {
+              updated = true;
+            }
+          }
+
+          if (applicationSecurityGroups != null) {
+            target.applicationSecurityGroups ??= [];
+            if (setSubResourceIds(target.applicationSecurityGroups, applicationSecurityGroups)) {
+              updated = true;
+            }
+          }
+
+          if (applyOptionsDifferencesDeep(target, descriptorRest as NetworkInterfaceIPConfiguration)) {
+            updated = true;
+          }
+
+          return updated;
+        }
+
+        nic.ipConfigurations ??= [];
+        if (
+          applyArrayKeyedDescriptor(
+            nic.ipConfigurations as NetworkInterfaceIPConfigurationDescriptor[],
+            ipConfigurations,
+            "name",
+            applyIpConfiguration,
+            shallowCloneDefinedValues,
+            { deleteUnmatchedTargets: true },
+          )
+        ) {
+          upsertRequired = true;
+        }
+      }
+
+      if (applyResourceIdProperty(nic, "networkSecurityGroup", networkSecurityGroup)) {
+        upsertRequired = true;
+      }
+
+      if (applyOptionsDifferencesDeep(nic, descriptorRest as NetworkInterface)) {
+        upsertRequired = true;
+      }
+    } else {
+      if (location == null) {
+        throw new Error("A location is required");
+      }
+
+      upsertRequired = true;
+      nic = {
+        name,
+        location,
+        ipConfigurations,
+        networkSecurityGroup,
+        ...descriptorRest,
+      };
+    }
+
+    if (upsertRequired) {
+      const client = this.getClient(subscriptionId);
+      nic = await client.networkInterfaces.beginCreateOrUpdateAndWait(opContext.groupName, name, nic, {
+        abortSignal: opContext.abortSignal,
+      });
+    }
+
+    return nic;
+  }
+
   async nsgGet(name: string, options?: NetworkToolsOptions): Promise<NetworkSecurityGroup | null> {
     const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
     if (subscriptionId != null && groupName != null) {
@@ -443,7 +641,7 @@ export class NetworkTools {
       args.push("--resource-group", groupName);
     }
 
-    return this.#getLaxInvokerFn(options)<NetworkSecurityGroup>`network nsg show ${args}`;
+    return await this.#getLaxInvokerFn(options)<NetworkSecurityGroup>`network nsg show ${args}`;
   }
 
   async nsgUpsert(
@@ -744,8 +942,8 @@ export class NetworkTools {
       upsertRequired = true;
       pip = {
         name,
-        sku: skuDescriptor,
         location,
+        sku: skuDescriptor,
         linkedPublicIPAddress,
         natGateway,
         publicIPPrefix,

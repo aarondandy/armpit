@@ -15,9 +15,9 @@ let myUser = await az.account.showSignedInUser();
 const rg = await az.group(`samples-${targetLocation}`, targetLocation);
 const resourceHash = new NameHash(targetEnvironment.subscriptionId, rg.name, { defaultLength: 6 });
 
-// -------
-// Network
-// -------
+const asgJump = rg.network.asgUpsert(`asg-jump`);
+
+const nsg = rg.network.nsgUpsert(`nsg-sample`, {});
 
 const natIp = rg.network.pipUpsert(`pip-natsample-${rg.location}`, {
   sku: "Standard",
@@ -40,7 +40,35 @@ const vnet = (async () =>
         name: "jump",
         addressPrefix: "10.10.4.0/24",
         natGateway: await nat,
+        networkSecurityGroup: await nsg,
       },
     ],
   }))();
 vnet.then(x => console.log(`[net] vnet ${x.name}`));
+
+const vmIp = rg.network.pipUpsert(`pip-jump-${rg.location}`, {
+  sku: "Standard",
+  publicIPAllocationMethod: "Static",
+  dnsSettings: { domainNameLabel: `jump-sample-${resourceHash}` },
+});
+vmIp.then(x => console.log(`[vm] ip ${x.ipAddress}`));
+
+const nic = (async () =>
+  rg.network.nicUpsert(`nic-jump-${rg.location}`, {
+    nicType: "Standard",
+    networkSecurityGroup: await nsg,
+    ipConfigurations: [
+      {
+        name: "ipconfig-vm",
+        primary: true,
+        privateIPAddress: "10.10.4.10",
+        privateIPAllocationMethod: "Static",
+        publicIPAddress: await vmIp,
+        subnet: (await vnet).subnets!.find(s => s.name === "jump")!,
+        applicationSecurityGroups: [await asgJump],
+      },
+    ],
+  }))();
+nic.then(x => console.log(`[vm] nic created ${x.name}`));
+
+await nic;
