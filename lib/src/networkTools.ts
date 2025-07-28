@@ -16,6 +16,7 @@ import type {
   KnownIPAllocationMethod,
   KnownIPVersion,
   KnownPublicIPAddressSkuName,
+  ApplicationSecurityGroup,
 } from "@azure/arm-network";
 import { NetworkManagementClient } from "@azure/arm-network";
 import type {
@@ -406,6 +407,62 @@ export class NetworkTools {
     }
 
     return vnet;
+  }
+
+  async asgGet(name: string, options?: NetworkToolsOptions): Promise<ApplicationSecurityGroup | null> {
+    const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
+    if (subscriptionId != null && groupName != null) {
+      const client = this.getClient(subscriptionId);
+      return await handleGet(client.applicationSecurityGroups.get(groupName, name, { abortSignal }));
+    }
+
+    const args = ["--name", name];
+    if (groupName) {
+      args.push("--resource-group", groupName);
+    }
+
+    return this.#getLaxInvokerFn(options)<NetworkSecurityGroup>`network asg show ${args}`;
+  }
+
+  async asgUpsert(name: string, options?: NetworkToolsOptions): Promise<ApplicationSecurityGroup> {
+    const opContext = this.#buildMergedOptions(options);
+
+    if (opContext.groupName == null) {
+      throw new Error("A group name is required to perform NSG operations.");
+    }
+
+    let upsertRequired = false;
+    let asg = await this.asgGet(name, options);
+
+    let subscriptionId = opContext.subscriptionId;
+    const location = opContext.location;
+
+    if (asg) {
+      subscriptionId ??= extractSubscriptionFromId(asg.id);
+
+      if (location != null && asg.location != null && !locationNameOrCodeEquals(location, asg.location)) {
+        throw new Error(`Specified location ${location} conflicts with existing ${asg.location}.`);
+      }
+    } else {
+      if (location == null) {
+        throw new Error("A location is required");
+      }
+
+      upsertRequired = true;
+      asg = {
+        name,
+        location,
+      };
+    }
+
+    if (upsertRequired) {
+      const client = this.getClient(subscriptionId);
+      asg = await client.applicationSecurityGroups.beginCreateOrUpdateAndWait(opContext.groupName, name, asg, {
+        abortSignal: opContext.abortSignal,
+      });
+    }
+
+    return asg;
   }
 
   async nsgGet(name: string, options?: NetworkToolsOptions): Promise<NetworkSecurityGroup | null> {

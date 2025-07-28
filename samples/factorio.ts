@@ -1,7 +1,7 @@
 import path from "node:path";
 import { az, NameHash } from "armpit";
 import { loadMyEnvironment, loadState, saveState } from "./utils/state.js";
-import type { ApplicationSecurityGroup, PublicIPAddress, NetworkInterface } from "@azure/arm-network";
+import type { NetworkInterface } from "@azure/arm-network";
 import type { Disk, VirtualMachine, VirtualMachineExtension, RunCommandResult } from "@azure/arm-compute";
 
 // --------------------------
@@ -28,8 +28,8 @@ const resourceHash = new NameHash(targetEnvironment.subscriptionId).concat(rg.na
 // -------
 
 const asgs = {
-  ssh: rg<ApplicationSecurityGroup>`network asg create -n asg-ssh`,
-  factorio: rg<ApplicationSecurityGroup>`network asg create -n asg-factorio`,
+  ssh: rg.network.asgUpsert("asg-ssh"),
+  factorio: rg.network.asgUpsert("asg-factorio"),
 };
 
 const nsg = rg.network.nsgUpsert(`nsg-videogames-${rg.location}`, {
