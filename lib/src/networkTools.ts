@@ -17,6 +17,8 @@ import type {
   KnownIPVersion,
   KnownPublicIPAddressSkuName,
   ApplicationSecurityGroup,
+  NatGateway,
+  KnownNatGatewaySkuName,
   SubResource as NetworkSubResource,
 } from "@azure/arm-network";
 import { NetworkManagementClient } from "@azure/arm-network";
@@ -137,6 +139,20 @@ interface PublicIpDescriptor
   sku?: `${KnownPublicIPAddressSkuName}` | PublicIPAddress["sku"];
 }
 
+interface NatGatewayDescriptor
+  extends Pick<
+    NatGateway,
+    | "zones"
+    | "idleTimeoutInMinutes"
+    | "publicIpAddresses"
+    | "publicIpAddressesV6"
+    | "publicIpPrefixes"
+    | "publicIpPrefixesV6"
+    | "sourceVirtualNetwork"
+  > {
+  sku: `${KnownNatGatewaySkuName}` | NatGateway["sku"];
+}
+
 function pluralPropPairsAreEqual<T>(
   a: T | null | undefined,
   aMulti: T[] | null | undefined,
@@ -184,6 +200,28 @@ function applyResourceIdProperty<TTarget>(target: TTarget, key: keyof TTarget, s
   }
 
   return false;
+}
+
+function setSubResourceIds(target: { id?: string }[], source: { id?: string }[]) {
+  return applyArrayKeyedDescriptor(
+    target,
+    source.filter(s => s.id != null),
+    "id",
+    (t, s) => {
+      if (s.id != null && s.id !== t.id) {
+        t.id = s.id;
+        return true;
+      }
+
+      return false;
+    },
+    s => {
+      return { id: s.id };
+    },
+    {
+      deleteUnmatchedTargets: true,
+    },
+  );
 }
 
 export class NetworkTools {
@@ -257,6 +295,140 @@ export class NetworkTools {
     }
 
     return asg;
+  }
+
+  async natGatewayGet(name: string, options?: NetworkToolsOptions): Promise<NatGateway | null> {
+    const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
+    if (subscriptionId != null && groupName != null) {
+      const client = this.getClient(subscriptionId);
+      return await handleGet(client.natGateways.get(groupName, name, { abortSignal }));
+    }
+
+    const args = ["--name", name];
+    if (groupName) {
+      args.push("--resource-group", groupName);
+    }
+
+    return this.#getLaxInvokerFn(options)<NatGateway>`network nat gateway show ${args}`;
+  }
+
+  async natGatewayUpsert(
+    name: string,
+    descriptorOptions: NatGatewayDescriptor & NetworkToolsOptions,
+  ): Promise<NatGateway> {
+    const {
+      options,
+      descriptor: {
+        sku,
+        zones,
+        publicIpAddresses,
+        publicIpAddressesV6,
+        publicIpPrefixes,
+        publicIpPrefixesV6,
+        sourceVirtualNetwork,
+        ...descriptorRest
+      },
+    } = descriptorOptions ? splitNetworkOptionsAndDescriptor(descriptorOptions) : { descriptor: {} };
+
+    const opContext = this.#buildMergedOptions(options);
+
+    if (opContext.groupName == null) {
+      throw new Error("A group name is required to perform NSG operations.");
+    }
+
+    const skuDescriptor = typeof sku === "string" ? { name: sku } : sku;
+
+    let upsertRequired = false;
+    let nat = await this.natGatewayGet(name, options);
+
+    let subscriptionId = opContext.subscriptionId;
+    const location = opContext.location;
+
+    if (nat) {
+      subscriptionId ??= extractSubscriptionFromId(nat.id);
+
+      if (location != null && nat.location != null && !locationNameOrCodeEquals(location, nat.location)) {
+        throw new Error(`Specified location ${location} conflicts with existing ${nat.location}.`);
+      }
+
+      if (skuDescriptor != null) {
+        nat.sku ??= {};
+        if (applyOptionsDifferencesDeep(nat.sku, skuDescriptor)) {
+          upsertRequired = true;
+        }
+      }
+
+      if (zones != null) {
+        nat.zones ??= [];
+        if (isArrayEqualUnordered(nat.zones, zones)) {
+          nat.zones = [...zones];
+          upsertRequired = true;
+        }
+      }
+
+      if (publicIpAddresses != null) {
+        nat.publicIpAddresses ??= [];
+        if (setSubResourceIds(nat.publicIpAddresses, publicIpAddresses)) {
+          upsertRequired = true;
+        }
+      }
+
+      if (publicIpAddressesV6 != null) {
+        nat.publicIpAddressesV6 ??= [];
+        if (setSubResourceIds(nat.publicIpAddressesV6, publicIpAddressesV6)) {
+          upsertRequired = true;
+        }
+      }
+
+      if (publicIpPrefixes != null) {
+        nat.publicIpPrefixes ??= [];
+        if (setSubResourceIds(nat.publicIpPrefixes, publicIpPrefixes)) {
+          upsertRequired = true;
+        }
+      }
+
+      if (publicIpPrefixesV6 != null) {
+        nat.publicIpPrefixesV6 ??= [];
+        if (setSubResourceIds(nat.publicIpPrefixesV6, publicIpPrefixesV6)) {
+          upsertRequired = true;
+        }
+      }
+
+      if (applyResourceIdProperty(nat, "sourceVirtualNetwork", sourceVirtualNetwork)) {
+        upsertRequired = true;
+      }
+
+      if (applyOptionsDifferencesDeep(nat, descriptorRest)) {
+        upsertRequired = true;
+      }
+    } else {
+      if (location == null) {
+        throw new Error("A location is required");
+      }
+
+      upsertRequired = true;
+      nat = {
+        name,
+        location,
+        sku: skuDescriptor,
+        zones,
+        publicIpAddresses,
+        publicIpAddressesV6,
+        publicIpPrefixes,
+        publicIpPrefixesV6,
+        sourceVirtualNetwork,
+        ...descriptorRest,
+      };
+    }
+
+    if (upsertRequired) {
+      const client = this.getClient(subscriptionId);
+      nat = await client.natGateways.beginCreateOrUpdateAndWait(opContext.groupName, name, nat, {
+        abortSignal: opContext.abortSignal,
+      });
+    }
+
+    return nat;
   }
 
   async nsgGet(name: string, options?: NetworkToolsOptions): Promise<NetworkSecurityGroup | null> {
