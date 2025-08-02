@@ -189,3 +189,20 @@ export function isThrowableAbortSignal(value: unknown): value is AbortSignal & {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return isAbortSignal(value) && typeof (value as any).throwIfAborted === "function";
 }
+
+export function isPrimitiveValue(value: unknown): value is bigint | boolean | number | string | null | undefined {
+  if (value == null) {
+    return true;
+  }
+
+  switch (typeof value) {
+    case "bigint":
+    case "boolean":
+    case "number":
+    case "string":
+    case "undefined":
+      return true;
+    default:
+      return false;
+  }
+}

@@ -42,6 +42,7 @@ import {
   applyArrayKeyedDescriptor,
   applyArrayIdDescriptors,
   applyOptionsDifferencesDeep,
+  applySourceToTargetObject,
 } from "./optionsUtils.js";
 import {
   type SubscriptionId,
@@ -230,6 +231,73 @@ function applyResourceIdProperty<TTarget>(target: TTarget, key: keyof TTarget, s
     (target as any)[key] = { id: source.id };
     return true;
   }
+
+  return false;
+}
+
+function applySubResourceProperty<
+  TTarget extends { [P in TKey]?: { id?: string } },
+  TSource extends { [P in TKey]?: { id?: string } },
+  TKey extends keyof TSource,
+>(target: TTarget, source: TSource, key: TKey) {
+  let updated = false;
+  const sourceProp = source[key];
+  if (sourceProp == null) {
+    if (sourceProp === null) {
+      // TODO: should this set target[key] to null or delete it?
+      throw new Error("Null SubResource assignment is not supported");
+    } else {
+      // If the whole object is undefined, then skip
+      return updated;
+    }
+  }
+
+  const sourceId = sourceProp?.id;
+  if (sourceId == null) {
+    throw new Error("SubResource assignment with invalid ID is not supported");
+  }
+
+  if (target[key]?.id !== sourceId) {
+    target[key] = { id: sourceId } as TTarget[TKey];
+    updated = true;
+  }
+
+  return updated;
+}
+
+function applySubResourceList<
+  TTargetItem extends { id?: string },
+  TSource extends { [P in TKey]?: { id?: string }[] },
+  TKey extends keyof TSource,
+>(target: { [P in TKey]?: TTargetItem[] }, source: { [P in TKey]?: { id?: string }[] }, key: TKey) {
+  const sourceArray = source[key] as { id?: string }[] | undefined;
+  if (sourceArray == null) {
+    return false;
+  }
+
+  let targetArray = target[key] as TTargetItem[] | undefined;
+  if (targetArray == null) {
+    targetArray = [];
+    target[key] = targetArray;
+  }
+
+  const sourceIds = sourceArray.map(r => r?.id).filter(id => id) as string[];
+
+  for (let i = 0; i < targetArray.length; ) {
+    const targetId = targetArray[i]?.id;
+    if (targetId != null && sourceIds.includes(targetId)) {
+      i++;
+    } else {
+      targetArray.splice(i, 1);
+    }
+  }
+
+  const toAdd = targetArray
+    .map(r => r?.id)
+    .filter(id => id && !sourceIds.includes(id))
+    .map(id => ({ id })) as TTargetItem[];
+
+  targetArray.push(...toAdd);
 
   return false;
 }
@@ -512,72 +580,18 @@ export class NetworkTools {
           source: NetworkInterfaceIPConfigurationDescriptor,
         ) {
           let updated = false;
-          const {
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            name,
-            gatewayLoadBalancer,
-            virtualNetworkTaps,
-            applicationGatewayBackendAddressPools,
-            loadBalancerBackendAddressPools,
-            loadBalancerInboundNatRules,
-            subnet,
-            publicIPAddress,
-            applicationSecurityGroups,
-            ...descriptorRest
-          } = source;
 
-          if (applyResourceIdProperty(target, "gatewayLoadBalancer", gatewayLoadBalancer)) {
-            updated = true;
-          }
-
-          if (applyResourceIdProperty(target, "subnet", subnet)) {
-            updated = true;
-          }
-
-          if (applyResourceIdProperty(target, "publicIPAddress", publicIPAddress)) {
-            updated = true;
-          }
-
-          if (virtualNetworkTaps != null) {
-            target.virtualNetworkTaps ??= [];
-            if (setSubResourceIds(target.virtualNetworkTaps, virtualNetworkTaps)) {
-              updated = true;
-            }
-          }
-
-          if (applicationGatewayBackendAddressPools != null) {
-            target.applicationGatewayBackendAddressPools ??= [];
-            if (
-              setSubResourceIds(target.applicationGatewayBackendAddressPools, applicationGatewayBackendAddressPools)
-            ) {
-              updated = true;
-            }
-          }
-
-          if (loadBalancerBackendAddressPools != null) {
-            target.loadBalancerBackendAddressPools ??= [];
-            if (setSubResourceIds(target.loadBalancerBackendAddressPools, loadBalancerBackendAddressPools)) {
-              updated = true;
-            }
-          }
-
-          if (loadBalancerInboundNatRules != null) {
-            target.loadBalancerInboundNatRules ??= [];
-            if (setSubResourceIds(target.loadBalancerInboundNatRules, loadBalancerInboundNatRules)) {
-              updated = true;
-            }
-          }
-
-          if (applicationSecurityGroups != null) {
-            target.applicationSecurityGroups ??= [];
-            if (setSubResourceIds(target.applicationSecurityGroups, applicationSecurityGroups)) {
-              updated = true;
-            }
-          }
-
-          if (applyOptionsDifferencesDeep(target, descriptorRest as NetworkInterfaceIPConfiguration)) {
-            updated = true;
-          }
+          updated = applySourceToTargetObject(target, source, {
+            name: "ignore",
+            gatewayLoadBalancer: applySubResourceProperty, // TODO: should fail
+            subnet: applySubResourceProperty,
+            publicIPAddress: applySubResourceProperty,
+            virtualNetworkTaps: applySubResourceList, // TODO: should fail
+            applicationGatewayBackendAddressPools: applySubResourceList,
+            loadBalancerBackendAddressPools: applySubResourceList,
+            loadBalancerInboundNatRules: applySubResourceList,
+            applicationSecurityGroups: applySubResourceList,
+          });
 
           return updated;
         }

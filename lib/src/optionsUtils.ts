@@ -1,3 +1,5 @@
+import { isPrimitiveValue } from "./tsUtils.js";
+
 export function shallowCloneDefinedValues<T extends object>(obj: T) {
   return Object.entries(obj).reduce((acc: T, [key, value]) => {
     if (value !== undefined) {
@@ -183,4 +185,99 @@ export function applyObjectKeyProperties<TTarget extends TSource, TSource extend
   }
 
   return updated;
+}
+
+type ApplyOptionsResult = boolean;
+
+type ApplyObjectPropFn<
+  TTarget extends { [K in keyof TSource]?: unknown },
+  TSource extends { [K in keyof TSource]?: unknown },
+  TKey extends keyof TSource,
+> = (target: { [P in TKey]?: TTarget[P] }, source: { [P in TKey]: TSource[P] }, key: TKey) => ApplyOptionsResult;
+
+type ApplyObjectTemplate<
+  TTarget extends { [K in keyof TSource]?: unknown },
+  TSource extends { [K in keyof TSource]?: unknown },
+> = {
+  [K in keyof TSource]?:
+    | (TSource[K] extends object ? ApplyObjectTemplate<TTarget[K], TSource[K]> : never)
+    | ApplyObjectPropFn<TTarget, TSource, K>
+    | "ignore";
+};
+
+interface ApplyContext {
+  visitedSourceObjects?: unknown[];
+}
+
+export function applySourceToTargetObject<
+  TTarget extends { [K in keyof TSource]?: unknown },
+  TSource extends { [K in keyof TSource]?: unknown },
+  TTemplate extends ApplyObjectTemplate<TTarget, TSource>,
+>(target: TTarget, source: TSource, template?: TTemplate, context?: ApplyContext): ApplyOptionsResult {
+  let hasBeenUpdated = false;
+
+  if (context == null) {
+    context = {};
+  }
+
+  if (context.visitedSourceObjects == null) {
+    context.visitedSourceObjects = [source];
+  } else {
+    if (context.visitedSourceObjects.includes(source)) {
+      throw new Error("Source object contains cyclical references");
+    }
+
+    context.visitedSourceObjects.push(source);
+  }
+
+  for (const [key, sourceValue] of Object.entries(source) as [[keyof TSource, TSource[keyof TSource]]]) {
+    if (sourceValue == null && sourceValue !== null) {
+      continue; // skip undefined values
+    }
+
+    const templateValue = template?.[key];
+    if (templateValue === null) {
+      throw new Error("Null template handler not implemented");
+    } else if (templateValue == null) {
+      if (sourceValue === null || isPrimitiveValue(sourceValue)) {
+        // TODO: extract basic equality to its own reusable function that can be explicitly specified in a template
+        if (target[key] !== (sourceValue as unknown)) {
+          target[key] = sourceValue as unknown as TTarget[keyof TSource];
+          hasBeenUpdated = true;
+        }
+      } else if (Array.isArray(sourceValue)) {
+        throw new Error("Array assignment not supported");
+      } else if (typeof sourceValue === "object") {
+        if (target[key] == null) {
+          target[key] = {} as TTarget[keyof TSource];
+        }
+
+        if (applySourceToTargetObject(target[key], sourceValue, templateValue as undefined, context)) {
+          hasBeenUpdated = true;
+        }
+      } else {
+        throw new Error("Source value not supported");
+      }
+    } else if (templateValue === "ignore") {
+      // Do nothing
+    } else if (typeof templateValue === "function") {
+      if ((templateValue as ApplyObjectPropFn<TTarget, TSource, keyof TSource>)(target, source, key)) {
+        hasBeenUpdated = true;
+      }
+    } else if (Array.isArray(templateValue)) {
+      throw new Error("Template array item is not supported");
+    } else if (typeof templateValue === "object") {
+      if (target[key] == null) {
+        target[key] = {} as TTarget[keyof TSource];
+      }
+
+      if (applySourceToTargetObject(target[key], sourceValue, templateValue, context)) {
+        hasBeenUpdated = true;
+      }
+    } else {
+      throw new Error("Template item is unexpected");
+    }
+  }
+
+  return hasBeenUpdated;
 }
