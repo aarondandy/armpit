@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { applySourceToTargetObject } from "./optionsUtils.js";
+import {
+  applySourceToTargetObject,
+  applySourceToTargetObjectWithTemplate,
+  createKeyedArrayPropApplyFn,
+} from "./optionsUtils.js";
 
 describe("apply options without template", () => {
   it("apply nothing with empty source", () => {
@@ -51,7 +55,7 @@ describe("apply options without template", () => {
 describe("apply options with template functions", () => {
   it("applied function updates target from source", () => {
     const target = { a: 1 };
-    const result = applySourceToTargetObject(
+    const result = applySourceToTargetObjectWithTemplate(
       target,
       { a: 2 },
       {
@@ -67,7 +71,7 @@ describe("apply options with template functions", () => {
 
   it("applied nested function updates target from source", () => {
     const target = { a: { b: 1 } };
-    const result = applySourceToTargetObject(
+    const result = applySourceToTargetObjectWithTemplate(
       target,
       { a: { b: 2 } },
       {
@@ -85,8 +89,95 @@ describe("apply options with template functions", () => {
 
   it("unapplied function does nothing", () => {
     const target = { a: 1 };
-    const result = applySourceToTargetObject(target, { a: 2 }, { a: () => false });
+    const result = applySourceToTargetObjectWithTemplate(target, { a: 2 }, { a: () => false });
     expect(result).toBe(false);
     expect(target).toStrictEqual({ a: 1 });
+  });
+});
+
+describe("keyed array prop application", () => {
+  it("apply to matching items", () => {
+    const target = {
+      items: [
+        { n: "a", v: 1 },
+        { n: "b", v: 2 },
+      ],
+    };
+    const result = applySourceToTargetObjectWithTemplate(
+      target,
+      {
+        items: [
+          { n: "b", v: 3 },
+          { n: "a", v: 4 },
+        ],
+      },
+      {
+        items: createKeyedArrayPropApplyFn("n", applySourceToTargetObject),
+      },
+    );
+    expect(result).toBe(true);
+    expect(target).toStrictEqual({
+      items: [
+        { n: "a", v: 4 },
+        { n: "b", v: 3 },
+      ],
+    });
+  });
+
+  it("apply to matching items and adds", () => {
+    const target = {
+      items: [
+        { n: "a", v: 1 },
+        { n: "b", v: 2 },
+      ],
+    };
+    const result = applySourceToTargetObjectWithTemplate(
+      target,
+      {
+        items: [
+          { n: "b", v: 3 },
+          { n: "c", v: 4 },
+        ],
+      },
+      {
+        items: createKeyedArrayPropApplyFn("n", applySourceToTargetObject, true),
+      },
+    );
+    expect(result).toBe(true);
+    expect(target).toStrictEqual({
+      items: [
+        { n: "a", v: 1 },
+        { n: "b", v: 3 },
+        { n: "c", v: 4 },
+      ],
+    });
+  });
+
+  it("add missing and remove unspecified", () => {
+    const target = {
+      items: [
+        { n: "a", v: 1 },
+        { n: "b", v: 2 },
+      ],
+    };
+    const result = applySourceToTargetObjectWithTemplate(
+      target,
+      {
+        items: [
+          { n: "b", v: 3 },
+          { n: "c", v: 4 },
+        ],
+      },
+      {
+        items: createKeyedArrayPropApplyFn("n", applySourceToTargetObject, true, true),
+      },
+    );
+    expect(result).toBe(true);
+    expect(target).toStrictEqual({
+      items: [
+        { n: "b", v: 3 },
+        { n: "c", v: 4 },
+      ],
+    });
   });
 });

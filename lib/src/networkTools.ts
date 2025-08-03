@@ -42,7 +42,9 @@ import {
   applyArrayKeyedDescriptor,
   applyArrayIdDescriptors,
   applyOptionsDifferencesDeep,
-  applySourceToTargetObject,
+  applySourceToTargetObjectWithTemplate,
+  createKeyedArrayPropApplyFn,
+  type ApplyContext,
 } from "./optionsUtils.js";
 import {
   type SubscriptionId,
@@ -324,6 +326,35 @@ function setSubResourceIds(target: { id?: string }[], source: { id?: string }[])
   );
 }
 
+function applyIpConfiguration(
+  target: NetworkInterfaceIPConfiguration,
+  source: NetworkInterfaceIPConfigurationDescriptor,
+  context?: ApplyContext,
+) {
+  return applySourceToTargetObjectWithTemplate(
+    target,
+    source,
+    {
+      gatewayLoadBalancer: applySubResourceProperty,
+      subnet: applySubResourceProperty,
+      publicIPAddress: applySubResourceProperty,
+      virtualNetworkTaps: applySubResourceList,
+      applicationGatewayBackendAddressPools: applySubResourceList,
+      loadBalancerBackendAddressPools: applySubResourceList,
+      loadBalancerInboundNatRules: applySubResourceList,
+      applicationSecurityGroups: applySubResourceList,
+    },
+    context,
+  );
+}
+
+function applyNetworkInterface(nic: NetworkInterface, descriptor: NetworkInterfaceDescriptor) {
+  return applySourceToTargetObjectWithTemplate(nic, descriptor, {
+    networkSecurityGroup: applySubResourceProperty,
+    ipConfigurations: createKeyedArrayPropApplyFn("name", applyIpConfiguration, true, true),
+  });
+}
+
 export class NetworkTools {
   #invoker: AzCliInvoker;
   #managementClientFactory: ManagementClientFactory;
@@ -552,7 +583,7 @@ export class NetworkTools {
   ): Promise<NetworkInterface> {
     const {
       options,
-      descriptor: { ipConfigurations, networkSecurityGroup, ...descriptorRest },
+      descriptor, //: { ipConfigurations, networkSecurityGroup, ...descriptorRest },
     } = splitNetworkOptionsAndDescriptor(descriptorOptions);
 
     const opContext = this.#buildMergedOptions(options);
@@ -574,48 +605,7 @@ export class NetworkTools {
         throw new Error(`Specified location ${location} conflicts with existing ${nic.location}.`);
       }
 
-      if (ipConfigurations != null) {
-        function applyIpConfiguration(
-          target: NetworkInterfaceIPConfiguration,
-          source: NetworkInterfaceIPConfigurationDescriptor,
-        ) {
-          let updated = false;
-
-          updated = applySourceToTargetObject(target, source, {
-            name: "ignore",
-            gatewayLoadBalancer: applySubResourceProperty, // TODO: should fail
-            subnet: applySubResourceProperty,
-            publicIPAddress: applySubResourceProperty,
-            virtualNetworkTaps: applySubResourceList, // TODO: should fail
-            applicationGatewayBackendAddressPools: applySubResourceList,
-            loadBalancerBackendAddressPools: applySubResourceList,
-            loadBalancerInboundNatRules: applySubResourceList,
-            applicationSecurityGroups: applySubResourceList,
-          });
-
-          return updated;
-        }
-
-        nic.ipConfigurations ??= [];
-        if (
-          applyArrayKeyedDescriptor(
-            nic.ipConfigurations as NetworkInterfaceIPConfigurationDescriptor[],
-            ipConfigurations,
-            "name",
-            applyIpConfiguration,
-            shallowCloneDefinedValues,
-            { deleteUnmatchedTargets: true },
-          )
-        ) {
-          upsertRequired = true;
-        }
-      }
-
-      if (applyResourceIdProperty(nic, "networkSecurityGroup", networkSecurityGroup)) {
-        upsertRequired = true;
-      }
-
-      if (applyOptionsDifferencesDeep(nic, descriptorRest as NetworkInterface)) {
+      if (applyNetworkInterface(nic, descriptor)) {
         upsertRequired = true;
       }
     } else {
@@ -627,10 +617,9 @@ export class NetworkTools {
       nic = {
         name,
         location,
-        ipConfigurations,
-        networkSecurityGroup,
-        ...descriptorRest,
       };
+
+      applyNetworkInterface(nic, descriptor);
     }
 
     if (upsertRequired) {

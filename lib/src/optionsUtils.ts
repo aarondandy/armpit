@@ -70,7 +70,10 @@ export function applyOptionsDifferencesDeep<TTarget extends TSource, TSource ext
   return changesApplied;
 }
 
-export function applyArrayKeyedDescriptor<TTarget extends TSource, TSource extends object>(
+export function applyArrayKeyedDescriptor<
+  TTarget extends { [K in keyof TSource]?: TTarget[K] },
+  TSource extends object,
+>(
   targets: TTarget[],
   sources: TSource[],
   match: keyof TSource | ((t: TTarget, s: TSource) => boolean),
@@ -84,7 +87,7 @@ export function applyArrayKeyedDescriptor<TTarget extends TSource, TSource exten
   const unmatchedSources = [...sources];
   const matchFn =
     typeof match === "string"
-      ? (t: TTarget, s: TSource) => t[match] == s[match]
+      ? (t: TTarget, s: TSource) => t[match] == (s[match] as unknown)
       : (match as (t: TTarget, s: TSource) => boolean);
   let appliedChanges = false;
 
@@ -190,14 +193,24 @@ export function applyObjectKeyProperties<TTarget extends TSource, TSource extend
 type ApplyOptionsResult = boolean;
 
 type ApplyObjectPropFn<
-  TTarget extends { [K in keyof TSource]?: unknown },
-  TSource extends { [K in keyof TSource]?: unknown },
+  TTarget extends { [K in keyof TSource]?: TTarget[K] },
+  TSource extends { [K in keyof TSource]?: TSource[K] },
   TKey extends keyof TSource,
-> = (target: { [P in TKey]?: TTarget[P] }, source: { [P in TKey]: TSource[P] }, key: TKey) => ApplyOptionsResult;
+> = (
+  target: { [P in TKey]?: TTarget[P] },
+  source: { [P in TKey]: TSource[P] },
+  key: TKey,
+  context?: ApplyContext,
+) => ApplyOptionsResult;
+
+type ApplyObjectFn<
+  TTarget extends { [K in keyof TSource]?: TTarget[K] },
+  TSource extends { [K in keyof TSource]?: TSource[K] },
+> = (target: TTarget, source: TSource, context?: ApplyContext) => ApplyOptionsResult;
 
 type ApplyObjectTemplate<
-  TTarget extends { [K in keyof TSource]?: unknown },
-  TSource extends { [K in keyof TSource]?: unknown },
+  TTarget extends { [K in keyof TSource]?: TTarget[K] },
+  TSource extends { [K in keyof TSource]?: TSource[K] },
 > = {
   [K in keyof TSource]?:
     | (TSource[K] extends object ? ApplyObjectTemplate<TTarget[K], TSource[K]> : never)
@@ -205,13 +218,126 @@ type ApplyObjectTemplate<
     | "ignore";
 };
 
-interface ApplyContext {
+export interface ApplyContext {
   visitedSourceObjects?: unknown[];
 }
 
+export function createKeyedArrayPropApplyFn<
+  TTargetItem extends { [K in keyof TSourceItem]?: TTargetItem[K] } & object,
+  TSourceItem extends { [K in keyof TSourceItem]?: TSourceItem[K] } & object,
+  TTarget extends { [P in TProp]?: TTargetItem[] },
+  TSource extends { [P in TProp]?: TSourceItem[] },
+  TProp extends keyof TSource,
+>(
+  match: keyof TSourceItem | ((t: TTargetItem, s: TSourceItem) => boolean),
+  apply: ApplyObjectFn<TTargetItem, TSourceItem>,
+  create?: boolean | ((s: TSourceItem, c?: ApplyContext) => TTargetItem),
+  remove?: boolean | ((t: TTargetItem[], d: TTargetItem[]) => boolean),
+): ApplyObjectPropFn<TTarget, TSource, TProp> {
+  const matchFn =
+    typeof match === "function"
+      ? match
+      : (t: TTargetItem, s: TSourceItem) => {
+          const sourceValue = s[match];
+          return sourceValue != null && t[match] === sourceValue;
+        };
+
+  const createFn =
+    typeof create === "function"
+      ? create
+      : create == null || create === true
+        ? (s: TSourceItem, c?: ApplyContext) => {
+            const t = {} as TTargetItem;
+            apply(t, s, c);
+            return t;
+          }
+        : null;
+
+  const removeFn =
+    typeof remove === "function"
+      ? remove
+      : remove === true
+        ? (t: TTargetItem[], d: TTargetItem[]) => {
+            let removed = 0;
+            if (d != null && d.length > 0) {
+              for (const toDelete of d) {
+                const index = t.indexOf(toDelete);
+                if (index >= 0) {
+                  t.splice(index, 1);
+                  removed++;
+                }
+              }
+            }
+
+            return removed > 0;
+          }
+        : null;
+
+  return ((targetObj: TTarget, sourceObj: TSource, prop: TProp, context?: ApplyContext) => {
+    let appliedChanges = false;
+
+    const sourceItems = sourceObj[prop] as TSourceItem[] | undefined;
+    if (sourceItems == null) {
+      if (sourceItems === null) {
+        throw new Error("Null source item array is not supported");
+      } else {
+        return appliedChanges;
+      }
+    }
+
+    let targetItems = targetObj[prop] as TTargetItem[] | undefined;
+
+    if (targetItems == null) {
+      targetItems = [];
+      targetObj[prop] = targetItems as TTarget[TProp];
+    }
+
+    const unmatchedTargets = [...targetItems];
+
+    const matchedSources: TSourceItem[] = [];
+
+    sourceItems.forEach(sourceItem => {
+      const targetIndex = unmatchedTargets.findIndex(t => matchFn(t, sourceItem));
+      if (targetIndex >= 0) {
+        const targetItem = unmatchedTargets[targetIndex];
+        unmatchedTargets.splice(targetIndex, 1);
+
+        matchedSources.push(sourceItem);
+
+        if (apply(targetItem, sourceItem, context)) {
+          appliedChanges = true;
+        }
+      }
+    });
+
+    if (unmatchedTargets.length > 0 && removeFn != null) {
+      if (removeFn(targetItems, unmatchedTargets)) {
+        appliedChanges = true;
+      }
+    }
+
+    if (createFn != null) {
+      const unmatchedSources = sourceItems.filter(s => !matchedSources.includes(s));
+      if (unmatchedSources.length > 0) {
+        targetItems.push(...unmatchedSources.map(s => createFn(s, context)));
+        appliedChanges = true;
+      }
+    }
+
+    return appliedChanges;
+  }) as ApplyObjectPropFn<TTarget, TSource, TProp>;
+}
+
 export function applySourceToTargetObject<
-  TTarget extends { [K in keyof TSource]?: unknown },
-  TSource extends { [K in keyof TSource]?: unknown },
+  TTarget extends { [K in keyof TSource]?: TTarget[K] },
+  TSource extends { [K in keyof TSource]?: TSource[K] },
+>(target: TTarget, source: TSource, context?: ApplyContext): ApplyOptionsResult {
+  return applySourceToTargetObjectWithTemplate(target, source, undefined, context);
+}
+
+export function applySourceToTargetObjectWithTemplate<
+  TTarget extends { [K in keyof TSource]?: TTarget[K] },
+  TSource extends { [K in keyof TSource]?: TSource[K] },
   TTemplate extends ApplyObjectTemplate<TTarget, TSource>,
 >(target: TTarget, source: TSource, template?: TTemplate, context?: ApplyContext): ApplyOptionsResult {
   let hasBeenUpdated = false;
@@ -252,7 +378,7 @@ export function applySourceToTargetObject<
           target[key] = {} as TTarget[keyof TSource];
         }
 
-        if (applySourceToTargetObject(target[key], sourceValue, templateValue as undefined, context)) {
+        if (applySourceToTargetObject(target[key], sourceValue, context)) {
           hasBeenUpdated = true;
         }
       } else {
@@ -271,7 +397,7 @@ export function applySourceToTargetObject<
         target[key] = {} as TTarget[keyof TSource];
       }
 
-      if (applySourceToTargetObject(target[key], sourceValue, templateValue, context)) {
+      if (applySourceToTargetObjectWithTemplate(target[key], sourceValue, templateValue, context)) {
         hasBeenUpdated = true;
       }
     } else {
