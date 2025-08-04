@@ -3,6 +3,7 @@ import type {
   NetworkSecurityGroup,
   SecurityRule,
   VirtualNetwork,
+  VirtualNetworkBgpCommunities,
   Subnet,
   Delegation,
   KnownSecurityRuleDirection,
@@ -43,7 +44,7 @@ import {
   applyResourceRefProperty,
   applyResourceRefListProperty,
   type ApplyContext,
-  applyValueArrayUnordered,
+  applyUnorderedValueArrayProp,
   applySourceToTargetObject,
 } from "./optionsUtils.js";
 import {
@@ -126,17 +127,17 @@ function applyDelegation(target: Delegation, source: DelegationDescriptor, conte
 }
 
 interface SubnetDescriptor extends Pick<Subnet, "name" | "addressPrefix" | "addressPrefixes"> {
-  // TODO: routeTable
   // TODO: serviceEndpoints, serviceEndpointPolicies
-  // TODO: ipAllocations
   // TODO: ipamPoolPrefixAllocations
+  defaultOutboundAccess?: boolean;
   delegations?: DelegationDescriptor | string | (DelegationDescriptor | string)[];
-  networkSecurityGroup?: NetworkSubResource;
+  ipAllocations?: NetworkSubResource[];
   natGateway?: NetworkSubResource;
+  networkSecurityGroup?: NetworkSubResource;
   privateEndpointNetworkPolicies?: `${KnownVirtualNetworkPrivateEndpointNetworkPolicies}`;
   privateLinkServiceNetworkPolicies?: `${KnownVirtualNetworkPrivateLinkServiceNetworkPolicies}`;
+  routeTable?: NetworkSubResource;
   sharingScope?: `${KnownSharingScope}`;
-  defaultOutboundAccess?: boolean;
 }
 
 function applySubnet(target: Subnet, source: SubnetDescriptor, context?: ApplyContext) {
@@ -192,8 +193,10 @@ function applySubnet(target: Subnet, source: SubnetDescriptor, context?: ApplyCo
       },
       {
         delegations: createKeyedArrayPropApplyFn("serviceName", applyDelegation, true, true),
+        ipAllocations: applyResourceRefListProperty,
         natGateway: applyResourceRefProperty,
         networkSecurityGroup: applyResourceRefProperty,
+        routeTable: applyResourceRefProperty,
       },
       context,
     )
@@ -204,18 +207,23 @@ function applySubnet(target: Subnet, source: SubnetDescriptor, context?: ApplyCo
   return appliedChanges;
 }
 
-interface VnetDescriptor extends Pick<VirtualNetwork, "flowTimeoutInMinutes"> {
-  // TODO: dhcpOptions
+interface VnetDescriptor
+  extends Pick<
+    VirtualNetwork,
+    | "flowTimeoutInMinutes"
+    | "dhcpOptions"
+    | "enableDdosProtection"
+    | "enableVmProtection"
+    | "ddosProtectionPlan"
+    | "encryption"
+    | "ipAllocations"
+  > {
   // TODO: virtualNetworkPeerings
-  // TODO: enableDdosProtection, ddosProtectionPlan
-  // TODO: enableVmProtection
-  // TODO: bgpCommunities
-  // TODO: encryption
-  // TODO: ipAllocations
   addressSpace?: { addressPrefixes?: string[] };
   addressPrefix?: string;
-  subnets?: SubnetDescriptor[];
+  bgpCommunities?: Pick<VirtualNetworkBgpCommunities, "virtualNetworkCommunity">;
   privateEndpointVNetPolicies?: `${KnownPrivateEndpointVNetPolicies}`;
+  subnets?: SubnetDescriptor[];
 }
 
 interface VnetDescriptorWithOptions extends VnetDescriptor {
@@ -242,7 +250,7 @@ function applyVnet(target: VirtualNetwork, source: VnetDescriptorWithOptions, co
     }
 
     if (addressSpaceDescriptor.addressPrefixes != null) {
-      if (applyValueArrayUnordered(target.addressSpace, addressSpaceDescriptor, "addressPrefixes")) {
+      if (applyUnorderedValueArrayProp(target.addressSpace, addressSpaceDescriptor, "addressPrefixes")) {
         appliedChanges = true;
       }
     }
@@ -253,6 +261,11 @@ function applyVnet(target: VirtualNetwork, source: VnetDescriptorWithOptions, co
       target,
       descriptorRest,
       {
+        ddosProtectionPlan: applyResourceRefProperty,
+        dhcpOptions: {
+          dnsServers: applyUnorderedValueArrayProp,
+        },
+        ipAllocations: applyResourceRefListProperty,
         subnets: createKeyedArrayPropApplyFn("name", applySubnet, true, !!deleteUnknownSubnets),
       },
       context,
@@ -457,7 +470,7 @@ function applyPip(pip: PublicIPAddress, descriptor: PublicIpDescriptor, context?
       publicIPPrefix: applyResourceRefProperty,
       servicePublicIPAddress: applyResourceRefProperty,
       sku: applyNameOrSkuObjectProperty,
-      zones: applyValueArrayUnordered,
+      zones: applyUnorderedValueArrayProp,
     },
     context,
   );
@@ -488,7 +501,7 @@ function applyNatGateway(nat: NatGateway, descriptor: NatGatewayDescriptor, cont
       publicIpPrefixesV6: applyResourceRefListProperty,
       sku: applyNameOrSkuObjectProperty,
       sourceVirtualNetwork: applyResourceRefProperty,
-      zones: applyValueArrayUnordered,
+      zones: applyUnorderedValueArrayProp,
     },
     context,
   );

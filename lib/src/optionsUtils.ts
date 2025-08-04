@@ -193,28 +193,28 @@ export function applyObjectKeyProperties<TTarget extends TSource, TSource extend
 type ApplyOptionsResult = boolean;
 
 type ApplyObjectPropFn<
-  TTarget extends { [K in TKey]?: TTarget[K] },
-  TSource extends { [K in TKey]?: TSource[K] },
-  TKey extends keyof TSource,
+  TTarget extends { [P in TProp]?: TTarget[P] },
+  TSource extends { [P in TProp]?: TSource[P] },
+  TProp extends keyof TSource,
 > = (
-  target: { [P in TKey]?: TTarget[P] },
-  source: { [P in TKey]: TSource[P] },
-  key: TKey,
+  target: { [P in TProp]?: TTarget[P] },
+  source: { [P in TProp]: TSource[P] },
+  propName: TProp,
   context?: ApplyContext,
 ) => ApplyOptionsResult;
 
 type ApplyObjectFn<
-  TTarget extends { [K in keyof TSource]?: TTarget[K] },
-  TSource extends { [K in keyof TSource]?: TSource[K] },
+  TTarget extends { [P in keyof TSource]?: TTarget[P] },
+  TSource extends { [P in keyof TSource]?: TSource[P] },
 > = (target: TTarget, source: TSource, context?: ApplyContext) => ApplyOptionsResult;
 
 type ApplyObjectTemplate<
-  TTarget extends { [K in keyof TSource]?: TTarget[K] },
-  TSource extends { [K in keyof TSource]?: TSource[K] },
+  TTarget extends { [P in keyof TTarget & keyof TSource]?: TTarget[P] },
+  TSource extends { [P in keyof TSource]?: TSource[P] },
 > = {
-  [K in keyof TSource]?:
-    | (TSource[K] extends object ? ApplyObjectTemplate<TTarget[K], TSource[K]> : never)
-    | ApplyObjectPropFn<TTarget, TSource, K>
+  [P in keyof TTarget & keyof TSource]?:
+    | (TSource[P] extends object | undefined ? ApplyObjectTemplate<TTarget[P], TSource[P]> : never)
+    | ApplyObjectPropFn<TTarget, TSource, P>
     | "ignore";
 };
 
@@ -223,8 +223,8 @@ export interface ApplyContext {
 }
 
 export function createKeyedArrayPropApplyFn<
-  TTargetItem extends { [K in keyof TSourceItem]?: TTargetItem[K] } & object,
-  TSourceItem extends { [K in keyof TSourceItem]?: TSourceItem[K] } & object,
+  TTargetItem extends { [P in keyof TSourceItem]?: TTargetItem[P] } & object,
+  TSourceItem extends { [P in keyof TSourceItem]?: TSourceItem[P] } & object,
   TTarget extends { [P in TProp]?: TTargetItem[] },
   TSource extends { [P in TProp]?: TSourceItem[] },
   TProp extends keyof TSource,
@@ -329,15 +329,15 @@ export function createKeyedArrayPropApplyFn<
 }
 
 export function applySourceToTargetObject<
-  TTarget extends { [K in keyof TSource]?: TTarget[K] },
-  TSource extends { [K in keyof TSource]?: TSource[K] },
+  TTarget extends { [P in keyof TSource]?: TTarget[P] },
+  TSource extends { [P in keyof TSource]?: TSource[P] },
 >(target: TTarget, source: TSource, context?: ApplyContext): ApplyOptionsResult {
   return applySourceToTargetObjectWithTemplate(target, source, undefined, context);
 }
 
 export function applySourceToTargetObjectWithTemplate<
-  TTarget extends { [K in keyof TSource]?: TTarget[K] },
-  TSource extends { [K in keyof TSource]?: TSource[K] },
+  TTarget extends { [P in keyof TSource]?: TTarget[P] },
+  TSource extends { [P in keyof TSource]?: TSource[P] },
   TTemplate extends ApplyObjectTemplate<TTarget, TSource>,
 >(target: TTarget, source: TSource, template?: TTemplate, context?: ApplyContext): ApplyOptionsResult {
   let hasBeenUpdated = false;
@@ -356,29 +356,29 @@ export function applySourceToTargetObjectWithTemplate<
     context.visitedSourceObjects.push(source);
   }
 
-  for (const [key, sourceValue] of Object.entries(source) as [[keyof TSource, TSource[keyof TSource]]]) {
+  for (const [sourcePropName, sourceValue] of Object.entries(source) as [[keyof TSource, TSource[keyof TSource]]]) {
     if (sourceValue == null && sourceValue !== null) {
       continue; // skip undefined values
     }
 
-    const templateValue = template?.[key];
+    const templateValue = template?.[sourcePropName];
     if (templateValue === null) {
       throw new Error("Null template handler not implemented");
     } else if (templateValue == null) {
       if (sourceValue === null || isPrimitiveValue(sourceValue)) {
         // TODO: extract basic equality to its own reusable function that can be explicitly specified in a template
-        if (target[key] !== (sourceValue as unknown)) {
-          target[key] = sourceValue as unknown as TTarget[keyof TSource];
+        if (target[sourcePropName] !== (sourceValue as unknown)) {
+          target[sourcePropName] = sourceValue as unknown as TTarget[keyof TSource];
           hasBeenUpdated = true;
         }
       } else if (Array.isArray(sourceValue)) {
         throw new Error("Array assignment not supported");
       } else if (typeof sourceValue === "object") {
-        if (target[key] == null) {
-          target[key] = {} as TTarget[keyof TSource];
+        if (target[sourcePropName] == null) {
+          target[sourcePropName] = {} as TTarget[keyof TSource];
         }
 
-        if (applySourceToTargetObject(target[key], sourceValue, context)) {
+        if (applySourceToTargetObject(target[sourcePropName], sourceValue, context)) {
           hasBeenUpdated = true;
         }
       } else {
@@ -387,17 +387,17 @@ export function applySourceToTargetObjectWithTemplate<
     } else if (templateValue === "ignore") {
       // Do nothing
     } else if (typeof templateValue === "function") {
-      if ((templateValue as ApplyObjectPropFn<TTarget, TSource, keyof TSource>)(target, source, key)) {
+      if ((templateValue as ApplyObjectPropFn<TTarget, TSource, keyof TSource>)(target, source, sourcePropName)) {
         hasBeenUpdated = true;
       }
     } else if (Array.isArray(templateValue)) {
       throw new Error("Template array item is not supported");
     } else if (typeof templateValue === "object") {
-      if (target[key] == null) {
-        target[key] = {} as TTarget[keyof TSource];
+      if (target[sourcePropName] == null) {
+        target[sourcePropName] = {} as TTarget[keyof TSource];
       }
 
-      if (applySourceToTargetObjectWithTemplate(target[key], sourceValue, templateValue, context)) {
+      if (applySourceToTargetObjectWithTemplate(target[sourcePropName], sourceValue, templateValue, context)) {
         hasBeenUpdated = true;
       }
     } else {
@@ -408,23 +408,23 @@ export function applySourceToTargetObjectWithTemplate<
   return hasBeenUpdated;
 }
 
-export function applyValueArrayUnordered<
+export function applyUnorderedValueArrayProp<
   TValue extends string | number,
-  TTarget extends { [P in TKey]?: TValue[] },
-  TSource extends { [P in TKey]?: TValue[] },
-  TKey extends keyof TSource,
->(target: TTarget, source: TSource, key: TKey) {
+  TTarget extends { [P in TProp]?: TValue[] },
+  TSource extends { [P in TProp]?: TValue[] },
+  TProp extends keyof TSource,
+>(target: TTarget, source: TSource, propName: TProp) {
   let appliedChanges = false;
 
-  const sourceValues = source[key] as TValue[] | undefined;
+  const sourceValues = source[propName] as TValue[] | undefined;
   if (sourceValues == null) {
     return appliedChanges;
   }
 
-  let targetValues = target[key] as TValue[] | undefined;
+  let targetValues = target[propName] as TValue[] | undefined;
   if (targetValues == null) {
     targetValues = [];
-    target[key] = targetValues as TTarget[TKey];
+    target[propName] = targetValues as TTarget[TProp];
   }
 
   const toRemove = targetValues.filter(t => !sourceValues.includes(t));
@@ -446,15 +446,15 @@ export function applyValueArrayUnordered<
 }
 
 export function applyResourceRefProperty<
-  TTarget extends { [P in TKey]?: { id?: string } },
-  TSource extends { [P in TKey]?: { id?: string } | string },
-  TKey extends keyof TSource,
->(target: TTarget, source: TSource, key: TKey) {
+  TTarget extends { [P in TProp]?: { id?: string } },
+  TSource extends { [P in TProp]?: { id?: string } | string },
+  TProp extends keyof TSource,
+>(target: TTarget, source: TSource, propName: TProp) {
   let updated = false;
-  const sourceProp = source[key];
+  const sourceProp = source[propName];
   if (sourceProp == null) {
     if (sourceProp === null) {
-      // TODO: should this set target[key] to null or delete it?
+      // TODO: should this set target[propName] to null or delete it?
       throw new Error("Null SubResource assignment is not supported");
     } else {
       // If the whole object is undefined, then skip
@@ -467,8 +467,8 @@ export function applyResourceRefProperty<
     throw new Error("SubResource assignment with invalid ID is not supported");
   }
 
-  if (target[key]?.id !== sourceId) {
-    target[key] = { id: sourceId } as TTarget[TKey];
+  if (target[propName]?.id !== sourceId) {
+    target[propName] = { id: sourceId } as TTarget[TProp];
     updated = true;
   }
 
@@ -477,19 +477,19 @@ export function applyResourceRefProperty<
 
 export function applyResourceRefListProperty<
   TTargetItem extends { id?: string },
-  TSource extends { [P in TKey]?: { id?: string }[] },
-  TKey extends keyof TSource,
->(target: { [P in TKey]?: TTargetItem[] }, source: { [P in TKey]?: { id?: string }[] }, key: TKey) {
+  TSource extends { [P in TProp]?: { id?: string }[] },
+  TProp extends keyof TSource,
+>(target: { [P in TProp]?: TTargetItem[] }, source: { [P in TProp]?: { id?: string }[] }, propName: TProp) {
   let updated = false;
-  const sourceArray = source[key] as { id?: string }[] | undefined;
+  const sourceArray = source[propName] as { id?: string }[] | undefined;
   if (sourceArray == null) {
     return updated;
   }
 
-  let targetArray = target[key] as TTargetItem[] | undefined;
+  let targetArray = target[propName] as TTargetItem[] | undefined;
   if (targetArray == null) {
     targetArray = [];
-    target[key] = targetArray;
+    target[propName] = targetArray;
   }
 
   const sourceIds = sourceArray.map(r => r?.id).filter(id => id) as string[];
