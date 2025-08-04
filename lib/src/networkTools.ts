@@ -44,7 +44,11 @@ import {
   applyOptionsDifferencesDeep,
   applySourceToTargetObjectWithTemplate,
   createKeyedArrayPropApplyFn,
+  applySubResourceProperty,
+  applySubResourceListProperty,
   type ApplyContext,
+  applyValueArrayUnordered,
+  applySourceToTargetObject,
 } from "./optionsUtils.js";
 import {
   type SubscriptionId,
@@ -161,6 +165,39 @@ interface NatGatewayDescriptor
   sku: `${KnownNatGatewaySkuName}` | NatGateway["sku"];
 }
 
+function applyNatGatewaySkuProperty<
+  TTarget extends { [K in TKey]?: NatGateway["sku"] },
+  TSource extends { [K in TKey]?: NatGatewayDescriptor["sku"] },
+  TKey extends keyof NatGatewayDescriptor,
+>(target: TTarget, source: TSource, key: TKey, context?: ApplyContext) {
+  const sourceSkuValue = source[key] as NatGatewayDescriptor["sku"];
+  const sourceSku = typeof sourceSkuValue === "string" ? { name: sourceSkuValue } : sourceSkuValue;
+
+  if (sourceSku == null) {
+    return false;
+  }
+
+  let targetSku = target[key] as NatGateway["sku"];
+  if (targetSku == null) {
+    targetSku = {};
+    target[key] = targetSku as TTarget[TKey];
+  }
+
+  return applySourceToTargetObject(targetSku, sourceSku, context);
+}
+
+function applyNatGateway(nat: NatGateway, descriptor: NatGatewayDescriptor) {
+  return applySourceToTargetObjectWithTemplate(nat, descriptor, {
+    publicIpAddresses: applySubResourceListProperty,
+    publicIpAddressesV6: applySubResourceListProperty,
+    publicIpPrefixes: applySubResourceListProperty,
+    publicIpPrefixesV6: applySubResourceListProperty,
+    sku: applyNatGatewaySkuProperty,
+    sourceVirtualNetwork: applySubResourceProperty,
+    zones: applyValueArrayUnordered,
+  });
+}
+
 interface NetworkInterfaceIPConfigurationDescriptor
   extends Omit<
     NetworkInterfaceIPConfiguration,
@@ -176,6 +213,28 @@ interface NetworkInterfaceIPConfigurationDescriptor
   privateIPAddressVersion?: `${KnownIPVersion}`;
 }
 
+function applyIpConfiguration(
+  target: NetworkInterfaceIPConfiguration,
+  source: NetworkInterfaceIPConfigurationDescriptor,
+  context?: ApplyContext,
+) {
+  return applySourceToTargetObjectWithTemplate(
+    target,
+    source,
+    {
+      gatewayLoadBalancer: applySubResourceProperty,
+      subnet: applySubResourceProperty,
+      publicIPAddress: applySubResourceProperty,
+      virtualNetworkTaps: applySubResourceListProperty,
+      applicationGatewayBackendAddressPools: applySubResourceListProperty,
+      loadBalancerBackendAddressPools: applySubResourceListProperty,
+      loadBalancerInboundNatRules: applySubResourceListProperty,
+      applicationSecurityGroups: applySubResourceListProperty,
+    },
+    context,
+  );
+}
+
 interface NetworkInterfaceDescriptor
   extends Pick<
     NetworkInterface,
@@ -186,6 +245,13 @@ interface NetworkInterfaceDescriptor
   auxiliaryMode?: `${KnownNetworkInterfaceAuxiliaryMode}`;
   auxiliarySku?: `${KnownNetworkInterfaceAuxiliarySku}`;
   ipConfigurations: NetworkInterfaceIPConfigurationDescriptor[];
+}
+
+function applyNetworkInterface(nic: NetworkInterface, descriptor: NetworkInterfaceDescriptor) {
+  return applySourceToTargetObjectWithTemplate(nic, descriptor, {
+    networkSecurityGroup: applySubResourceProperty,
+    ipConfigurations: createKeyedArrayPropApplyFn("name", applyIpConfiguration, true, true),
+  });
 }
 
 function pluralPropPairsAreEqual<T>(
@@ -235,124 +301,6 @@ function applyResourceIdProperty<TTarget>(target: TTarget, key: keyof TTarget, s
   }
 
   return false;
-}
-
-function applySubResourceProperty<
-  TTarget extends { [P in TKey]?: { id?: string } },
-  TSource extends { [P in TKey]?: { id?: string } },
-  TKey extends keyof TSource,
->(target: TTarget, source: TSource, key: TKey) {
-  let updated = false;
-  const sourceProp = source[key];
-  if (sourceProp == null) {
-    if (sourceProp === null) {
-      // TODO: should this set target[key] to null or delete it?
-      throw new Error("Null SubResource assignment is not supported");
-    } else {
-      // If the whole object is undefined, then skip
-      return updated;
-    }
-  }
-
-  const sourceId = sourceProp?.id;
-  if (sourceId == null) {
-    throw new Error("SubResource assignment with invalid ID is not supported");
-  }
-
-  if (target[key]?.id !== sourceId) {
-    target[key] = { id: sourceId } as TTarget[TKey];
-    updated = true;
-  }
-
-  return updated;
-}
-
-function applySubResourceList<
-  TTargetItem extends { id?: string },
-  TSource extends { [P in TKey]?: { id?: string }[] },
-  TKey extends keyof TSource,
->(target: { [P in TKey]?: TTargetItem[] }, source: { [P in TKey]?: { id?: string }[] }, key: TKey) {
-  const sourceArray = source[key] as { id?: string }[] | undefined;
-  if (sourceArray == null) {
-    return false;
-  }
-
-  let targetArray = target[key] as TTargetItem[] | undefined;
-  if (targetArray == null) {
-    targetArray = [];
-    target[key] = targetArray;
-  }
-
-  const sourceIds = sourceArray.map(r => r?.id).filter(id => id) as string[];
-
-  for (let i = 0; i < targetArray.length; ) {
-    const targetId = targetArray[i]?.id;
-    if (targetId != null && sourceIds.includes(targetId)) {
-      i++;
-    } else {
-      targetArray.splice(i, 1);
-    }
-  }
-
-  const toAdd = targetArray
-    .map(r => r?.id)
-    .filter(id => id && !sourceIds.includes(id))
-    .map(id => ({ id })) as TTargetItem[];
-
-  targetArray.push(...toAdd);
-
-  return false;
-}
-
-function setSubResourceIds(target: { id?: string }[], source: { id?: string }[]) {
-  return applyArrayKeyedDescriptor(
-    target,
-    source.filter(s => s.id != null),
-    "id",
-    (t, s) => {
-      if (s.id != null && s.id !== t.id) {
-        t.id = s.id;
-        return true;
-      }
-
-      return false;
-    },
-    s => {
-      return { id: s.id };
-    },
-    {
-      deleteUnmatchedTargets: true,
-    },
-  );
-}
-
-function applyIpConfiguration(
-  target: NetworkInterfaceIPConfiguration,
-  source: NetworkInterfaceIPConfigurationDescriptor,
-  context?: ApplyContext,
-) {
-  return applySourceToTargetObjectWithTemplate(
-    target,
-    source,
-    {
-      gatewayLoadBalancer: applySubResourceProperty,
-      subnet: applySubResourceProperty,
-      publicIPAddress: applySubResourceProperty,
-      virtualNetworkTaps: applySubResourceList,
-      applicationGatewayBackendAddressPools: applySubResourceList,
-      loadBalancerBackendAddressPools: applySubResourceList,
-      loadBalancerInboundNatRules: applySubResourceList,
-      applicationSecurityGroups: applySubResourceList,
-    },
-    context,
-  );
-}
-
-function applyNetworkInterface(nic: NetworkInterface, descriptor: NetworkInterfaceDescriptor) {
-  return applySourceToTargetObjectWithTemplate(nic, descriptor, {
-    networkSecurityGroup: applySubResourceProperty,
-    ipConfigurations: createKeyedArrayPropApplyFn("name", applyIpConfiguration, true, true),
-  });
 }
 
 export class NetworkTools {
@@ -447,27 +395,13 @@ export class NetworkTools {
     name: string,
     descriptorOptions: NatGatewayDescriptor & NetworkToolsOptions,
   ): Promise<NatGateway> {
-    const {
-      options,
-      descriptor: {
-        sku,
-        zones,
-        publicIpAddresses,
-        publicIpAddressesV6,
-        publicIpPrefixes,
-        publicIpPrefixesV6,
-        sourceVirtualNetwork,
-        ...descriptorRest
-      },
-    } = descriptorOptions ? splitNetworkOptionsAndDescriptor(descriptorOptions) : { descriptor: {} };
+    const { options, descriptor } = splitNetworkOptionsAndDescriptor(descriptorOptions);
 
     const opContext = this.#buildMergedOptions(options);
 
     if (opContext.groupName == null) {
       throw new Error("A group name is required to perform NSG operations.");
     }
-
-    const skuDescriptor = typeof sku === "string" ? { name: sku } : sku;
 
     let upsertRequired = false;
     let nat = await this.natGatewayGet(name, options);
@@ -482,54 +416,7 @@ export class NetworkTools {
         throw new Error(`Specified location ${location} conflicts with existing ${nat.location}.`);
       }
 
-      if (skuDescriptor != null) {
-        nat.sku ??= {};
-        if (applyOptionsDifferencesDeep(nat.sku, skuDescriptor)) {
-          upsertRequired = true;
-        }
-      }
-
-      if (zones != null) {
-        nat.zones ??= [];
-        if (isArrayEqualUnordered(nat.zones, zones)) {
-          nat.zones = [...zones];
-          upsertRequired = true;
-        }
-      }
-
-      if (publicIpAddresses != null) {
-        nat.publicIpAddresses ??= [];
-        if (setSubResourceIds(nat.publicIpAddresses, publicIpAddresses)) {
-          upsertRequired = true;
-        }
-      }
-
-      if (publicIpAddressesV6 != null) {
-        nat.publicIpAddressesV6 ??= [];
-        if (setSubResourceIds(nat.publicIpAddressesV6, publicIpAddressesV6)) {
-          upsertRequired = true;
-        }
-      }
-
-      if (publicIpPrefixes != null) {
-        nat.publicIpPrefixes ??= [];
-        if (setSubResourceIds(nat.publicIpPrefixes, publicIpPrefixes)) {
-          upsertRequired = true;
-        }
-      }
-
-      if (publicIpPrefixesV6 != null) {
-        nat.publicIpPrefixesV6 ??= [];
-        if (setSubResourceIds(nat.publicIpPrefixesV6, publicIpPrefixesV6)) {
-          upsertRequired = true;
-        }
-      }
-
-      if (applyResourceIdProperty(nat, "sourceVirtualNetwork", sourceVirtualNetwork)) {
-        upsertRequired = true;
-      }
-
-      if (applyOptionsDifferencesDeep(nat, descriptorRest)) {
+      if (applyNatGateway(nat, descriptor)) {
         upsertRequired = true;
       }
     } else {
@@ -541,15 +428,9 @@ export class NetworkTools {
       nat = {
         name,
         location,
-        sku: skuDescriptor,
-        zones,
-        publicIpAddresses,
-        publicIpAddressesV6,
-        publicIpPrefixes,
-        publicIpPrefixesV6,
-        sourceVirtualNetwork,
-        ...descriptorRest,
       };
+
+      applyNatGateway(nat, descriptor);
     }
 
     if (upsertRequired) {

@@ -407,3 +407,107 @@ export function applySourceToTargetObjectWithTemplate<
 
   return hasBeenUpdated;
 }
+
+export function applyValueArrayUnordered<
+  TValue extends string | number,
+  TTarget extends { [P in TKey]?: TValue[] },
+  TSource extends { [P in TKey]?: TValue[] },
+  TKey extends keyof TSource,
+>(target: TTarget, source: TSource, key: TKey) {
+  let appliedChanges = false;
+
+  const sourceValues = source[key] as TValue[] | undefined;
+  if (sourceValues == null) {
+    return appliedChanges;
+  }
+
+  let targetValues = target[key] as TValue[] | undefined;
+  if (targetValues == null) {
+    targetValues = [];
+    target[key] = targetValues as TTarget[TKey];
+  }
+
+  const toRemove = targetValues.filter(t => !sourceValues.includes(t));
+  if (toRemove.length > 0) {
+    for (const r of toRemove) {
+      const i = targetValues.indexOf(r);
+      targetValues.splice(i, 1);
+      appliedChanges = true;
+    }
+  }
+
+  const toAdd = sourceValues.filter(s => !targetValues.includes(s));
+  if (toAdd.length > 0) {
+    targetValues.push(...toAdd);
+    appliedChanges = true;
+  }
+
+  return appliedChanges;
+}
+
+export function applySubResourceProperty<
+  TTarget extends { [P in TKey]?: { id?: string } },
+  TSource extends { [P in TKey]?: { id?: string } },
+  TKey extends keyof TSource,
+>(target: TTarget, source: TSource, key: TKey) {
+  let updated = false;
+  const sourceProp = source[key];
+  if (sourceProp == null) {
+    if (sourceProp === null) {
+      // TODO: should this set target[key] to null or delete it?
+      throw new Error("Null SubResource assignment is not supported");
+    } else {
+      // If the whole object is undefined, then skip
+      return updated;
+    }
+  }
+
+  const sourceId = sourceProp?.id;
+  if (sourceId == null) {
+    throw new Error("SubResource assignment with invalid ID is not supported");
+  }
+
+  if (target[key]?.id !== sourceId) {
+    target[key] = { id: sourceId } as TTarget[TKey];
+    updated = true;
+  }
+
+  return updated;
+}
+
+export function applySubResourceListProperty<
+  TTargetItem extends { id?: string },
+  TSource extends { [P in TKey]?: { id?: string }[] },
+  TKey extends keyof TSource,
+>(target: { [P in TKey]?: TTargetItem[] }, source: { [P in TKey]?: { id?: string }[] }, key: TKey) {
+  const sourceArray = source[key] as { id?: string }[] | undefined;
+  if (sourceArray == null) {
+    return false;
+  }
+
+  let targetArray = target[key] as TTargetItem[] | undefined;
+  if (targetArray == null) {
+    targetArray = [];
+    target[key] = targetArray;
+  }
+
+  const sourceIds = sourceArray.map(r => r?.id).filter(id => id) as string[];
+
+  for (let i = 0; i < targetArray.length; ) {
+    const targetId = targetArray[i]?.id;
+    if (targetId != null && sourceIds.includes(targetId)) {
+      i++;
+    } else {
+      targetArray.splice(i, 1);
+    }
+  }
+
+  const toAdd = targetArray
+    .map(r => r?.id)
+    .filter(id => id && !sourceIds.includes(id))
+    .map(id => ({ id })) as TTargetItem[];
+
+  targetArray.push(...toAdd);
+
+  return false;
+}
