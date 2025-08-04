@@ -480,9 +480,10 @@ export function applySubResourceListProperty<
   TSource extends { [P in TKey]?: { id?: string }[] },
   TKey extends keyof TSource,
 >(target: { [P in TKey]?: TTargetItem[] }, source: { [P in TKey]?: { id?: string }[] }, key: TKey) {
+  let updated = false;
   const sourceArray = source[key] as { id?: string }[] | undefined;
   if (sourceArray == null) {
-    return false;
+    return updated;
   }
 
   let targetArray = target[key] as TTargetItem[] | undefined;
@@ -499,15 +500,15 @@ export function applySubResourceListProperty<
       i++;
     } else {
       targetArray.splice(i, 1);
+      updated = true;
     }
   }
 
-  const toAdd = targetArray
-    .map(r => r?.id)
-    .filter(id => id && !sourceIds.includes(id))
-    .map(id => ({ id })) as TTargetItem[];
+  const toAdd = sourceIds.filter(id => !targetArray.some(r => r?.id === id)).map(id => ({ id })) as TTargetItem[];
+  if (toAdd.length > 0) {
+    updated = true;
+    targetArray.push(...toAdd);
+  }
 
-  targetArray.push(...toAdd);
-
-  return false;
+  return updated;
 }

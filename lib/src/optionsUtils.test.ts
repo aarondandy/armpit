@@ -3,6 +3,7 @@ import {
   applySourceToTargetObject,
   applySourceToTargetObjectWithTemplate,
   createKeyedArrayPropApplyFn,
+  applySubResourceListProperty,
 } from "./optionsUtils.js";
 
 describe("apply options without template", () => {
@@ -179,5 +180,51 @@ describe("keyed array prop application", () => {
         { n: "c", v: 4 },
       ],
     });
+  });
+});
+
+describe("apply sub-resource reference lists", () => {
+  it("explicitly empty leaves empty", () => {
+    const target = { items: [] };
+    const result = applySourceToTargetObjectWithTemplate(
+      target,
+      { items: [] },
+      { items: applySubResourceListProperty },
+    );
+    expect(result).toBe(false);
+    expect(target).toStrictEqual({ items: [] });
+  });
+
+  it("can add new item", () => {
+    const target = { items: [] };
+    const result = applySourceToTargetObjectWithTemplate(
+      target,
+      { items: [{ id: "/abc/123" }] },
+      { items: applySubResourceListProperty },
+    );
+    expect(result).toBe(true);
+    expect(target).toStrictEqual({ items: [{ id: "/abc/123" }] });
+  });
+
+  it("can remove old item", () => {
+    const target = { items: [{ id: "/abc/123" }] };
+    const result = applySourceToTargetObjectWithTemplate(
+      target,
+      { items: [] },
+      { items: applySubResourceListProperty },
+    );
+    expect(result).toBe(true);
+    expect(target).toStrictEqual({ items: [] });
+  });
+
+  it("can replace item", () => {
+    const target = { items: [{ id: "/abc/123" }] };
+    const result = applySourceToTargetObjectWithTemplate(
+      target,
+      { items: [{ id: "/abc/456" }] },
+      { items: applySubResourceListProperty },
+    );
+    expect(result).toBe(true);
+    expect(target).toStrictEqual({ items: [{ id: "/abc/456" }] });
   });
 });

@@ -40,7 +40,6 @@ import {
   shallowCloneDefinedValues,
   applyOptionsDifferencesShallow,
   applyArrayKeyedDescriptor,
-  applyArrayIdDescriptors,
   applyOptionsDifferencesDeep,
   applySourceToTargetObjectWithTemplate,
   createKeyedArrayPropApplyFn,
@@ -126,15 +125,145 @@ interface VnetDescriptor extends Pick<VirtualNetwork, "flowTimeoutInMinutes"> {
   privateEndpointVNetPolicies?: `${KnownPrivateEndpointVNetPolicies}`;
 }
 
-interface SecurityRuleDescriptor extends Omit<SecurityRule, "id" | "etag" | "type"> {
+interface SecurityRuleDescriptor extends Omit<SecurityRule, "id" | "etag" | "type" | "provisioningState"> {
   priority: number;
   direction: `${KnownSecurityRuleDirection}`;
   access: `${KnownSecurityRuleAccess}`;
   protocol: `${KnownSecurityRuleProtocol}`;
 }
 
+function applySecurityRule(target: SecurityRule, source: SecurityRuleDescriptor, context?: ApplyContext) {
+  const {
+    name,
+    sourcePortRange,
+    sourcePortRanges,
+    destinationPortRange,
+    destinationPortRanges,
+    sourceAddressPrefix,
+    sourceAddressPrefixes,
+    destinationAddressPrefix,
+    destinationAddressPrefixes,
+    ...rest
+  } = source;
+
+  let appliedChanges = false;
+  if (target.name == null) {
+    target.name = name;
+    appliedChanges = true;
+  } else if (target.name !== name) {
+    throw new Error("Name mismatch");
+  }
+
+  if (!pluralPropPairsAreEqual(target.sourcePortRange, target.sourcePortRanges, sourcePortRange, sourcePortRanges)) {
+    target.sourcePortRange = sourcePortRange;
+    target.sourcePortRanges = sourcePortRanges;
+    appliedChanges = true;
+  }
+
+  if (
+    !pluralPropPairsAreEqual(
+      target.destinationPortRange,
+      target.destinationPortRanges,
+      destinationPortRange,
+      destinationPortRanges,
+    )
+  ) {
+    target.destinationPortRange = destinationPortRange;
+    target.destinationPortRanges = destinationPortRanges;
+    appliedChanges = true;
+  }
+
+  if (
+    !pluralPropPairsAreEqual(
+      target.sourceAddressPrefix,
+      target.sourceAddressPrefixes,
+      sourceAddressPrefix,
+      sourceAddressPrefixes,
+    )
+  ) {
+    target.sourceAddressPrefix = sourceAddressPrefix;
+    target.sourceAddressPrefixes = sourceAddressPrefixes;
+    appliedChanges = true;
+  }
+
+  if (
+    !pluralPropPairsAreEqual(
+      target.destinationAddressPrefix,
+      target.destinationAddressPrefixes,
+      destinationAddressPrefix,
+      destinationAddressPrefixes,
+    )
+  ) {
+    target.destinationAddressPrefix = destinationAddressPrefix;
+    target.destinationAddressPrefixes = destinationAddressPrefixes;
+    appliedChanges = true;
+  }
+
+  if (
+    applySourceToTargetObjectWithTemplate(
+      target,
+      rest,
+      {
+        sourceApplicationSecurityGroups: applySubResourceListProperty,
+        destinationApplicationSecurityGroups: applySubResourceListProperty,
+      },
+      context,
+    )
+  ) {
+    appliedChanges = true;
+  }
+
+  return appliedChanges;
+}
+
 interface NsgDescriptor {
-  rules?: SecurityRuleDescriptor[];
+  securityRules?: SecurityRuleDescriptor[];
+}
+
+function applyNsg(nsg: NetworkSecurityGroup, givenDescriptor: NsgDescriptorWithOptions, context?: ApplyContext) {
+  const { deleteUnknownRules, securityRules: givenDescriptorRules, ...givenDescriptorRest } = givenDescriptor;
+
+  const rulesToApply = givenDescriptorRules?.map(d => {
+    const rule = { ...d }; // a shallow clone should be safe enough
+    if (!rule.protocol) {
+      rule.protocol = "*";
+    }
+
+    if (!(rule.sourceAddressPrefix || rule.sourceAddressPrefixes || rule.sourceApplicationSecurityGroups)) {
+      rule.sourceAddressPrefix = "*";
+    }
+
+    if (!(rule.sourcePortRange || rule.sourcePortRanges)) {
+      rule.sourcePortRange = "*";
+    }
+
+    if (
+      !(rule.destinationAddressPrefix || rule.destinationAddressPrefixes || rule.destinationApplicationSecurityGroups)
+    ) {
+      rule.destinationAddressPrefix = "*";
+    }
+
+    if (!(rule.destinationPortRange || rule.destinationPortRanges)) {
+      rule.destinationPortRange = "*";
+    }
+
+    return rule as SecurityRuleDescriptor;
+  });
+
+  return applySourceToTargetObjectWithTemplate(
+    nsg,
+    {
+      securityRules: rulesToApply,
+      ...givenDescriptorRest,
+    },
+    {
+      securityRules: createKeyedArrayPropApplyFn("name", applySecurityRule, true, !!deleteUnknownRules),
+    },
+    context,
+  );
+}
+
+interface NsgDescriptorWithOptions extends NsgDescriptor {
   deleteUnknownRules?: boolean;
 }
 
@@ -186,16 +315,21 @@ function applyNatGatewaySkuProperty<
   return applySourceToTargetObject(targetSku, sourceSku, context);
 }
 
-function applyNatGateway(nat: NatGateway, descriptor: NatGatewayDescriptor) {
-  return applySourceToTargetObjectWithTemplate(nat, descriptor, {
-    publicIpAddresses: applySubResourceListProperty,
-    publicIpAddressesV6: applySubResourceListProperty,
-    publicIpPrefixes: applySubResourceListProperty,
-    publicIpPrefixesV6: applySubResourceListProperty,
-    sku: applyNatGatewaySkuProperty,
-    sourceVirtualNetwork: applySubResourceProperty,
-    zones: applyValueArrayUnordered,
-  });
+function applyNatGateway(nat: NatGateway, descriptor: NatGatewayDescriptor, context?: ApplyContext) {
+  return applySourceToTargetObjectWithTemplate(
+    nat,
+    descriptor,
+    {
+      publicIpAddresses: applySubResourceListProperty,
+      publicIpAddressesV6: applySubResourceListProperty,
+      publicIpPrefixes: applySubResourceListProperty,
+      publicIpPrefixesV6: applySubResourceListProperty,
+      sku: applyNatGatewaySkuProperty,
+      sourceVirtualNetwork: applySubResourceProperty,
+      zones: applyValueArrayUnordered,
+    },
+    context,
+  );
 }
 
 interface NetworkInterfaceIPConfigurationDescriptor
@@ -530,12 +664,11 @@ export class NetworkTools {
 
   async nsgUpsert(
     name: string,
-    descriptorOptions?: NsgDescriptor & NetworkToolsOptions,
+    descriptorOptions?: NsgDescriptorWithOptions & NetworkToolsOptions,
   ): Promise<NetworkSecurityGroup> {
-    const {
-      options,
-      descriptor: { rules, deleteUnknownRules, ...descriptorRest },
-    } = descriptorOptions ? splitNetworkOptionsAndDescriptor(descriptorOptions) : { descriptor: {} };
+    const { options, descriptor } = descriptorOptions
+      ? splitNetworkOptionsAndDescriptor(descriptorOptions)
+      : { descriptor: {} };
 
     const opContext = this.#buildMergedOptions(options);
 
@@ -543,138 +676,20 @@ export class NetworkTools {
       throw new Error("A group name is required to perform NSG operations.");
     }
 
-    if (deleteUnknownRules && rules == null) {
+    if (descriptor?.deleteUnknownRules && descriptor?.securityRules == null) {
       throw new Error("Rules must be explicitly described when deleting unknown rules is requested");
     }
 
-    if (rules != null && rules.length > 0 && rules.some(r => r.access == null || (r.access as string) === "")) {
-      throw new Error("All NSG rules must specify access explicitly.");
+    if (
+      descriptor?.securityRules != null &&
+      descriptor.securityRules.length > 0 &&
+      descriptor.securityRules.some(r => r.access == null || (r.access as string) === "")
+    ) {
+      throw new Error("All NSG rules descriptors must specify access explicitly.");
     }
 
     let upsertRequired = false;
     let nsg = await this.nsgGet(name, options);
-
-    const nsgRulesNew = rules?.map(d => {
-      const rule: SecurityRule = { ...d }; // a shallow clone should be safe enough
-      if (!rule.protocol) {
-        rule.protocol = "*";
-      }
-
-      if (!(rule.sourceAddressPrefix || rule.sourceAddressPrefixes || rule.sourceApplicationSecurityGroups)) {
-        rule.sourceAddressPrefix = "*";
-      }
-
-      if (!(rule.sourcePortRange || rule.sourcePortRanges)) {
-        rule.sourcePortRange = "*";
-      }
-
-      if (
-        !(rule.destinationAddressPrefix || rule.destinationAddressPrefixes || rule.destinationApplicationSecurityGroups)
-      ) {
-        rule.destinationAddressPrefix = "*";
-      }
-
-      if (!(rule.destinationPortRange || rule.destinationPortRanges)) {
-        rule.destinationPortRange = "*";
-      }
-
-      return rule;
-    });
-
-    function applySecurityRuleDifferences(target: SecurityRule, source: SecurityRule) {
-      const {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        id: id,
-        name: name,
-        sourcePortRange,
-        sourcePortRanges,
-        destinationPortRange,
-        destinationPortRanges,
-        sourceAddressPrefix,
-        sourceAddressPrefixes,
-        destinationAddressPrefix,
-        destinationAddressPrefixes,
-        sourceApplicationSecurityGroups,
-        destinationApplicationSecurityGroups,
-        ...sourceRest
-      } = source;
-
-      let appliedChanges = false;
-
-      if (target.name == null) {
-        target.name = name;
-        appliedChanges = true;
-      }
-
-      if (applyOptionsDifferencesShallow(target, sourceRest)) {
-        appliedChanges = true;
-      }
-
-      if (
-        !pluralPropPairsAreEqual(target.sourcePortRange, target.sourcePortRanges, sourcePortRange, sourcePortRanges)
-      ) {
-        target.sourcePortRange = sourcePortRange;
-        target.sourcePortRanges = sourcePortRanges;
-        appliedChanges = true;
-      }
-
-      if (
-        !pluralPropPairsAreEqual(
-          target.destinationPortRange,
-          target.destinationPortRanges,
-          destinationPortRange,
-          destinationPortRanges,
-        )
-      ) {
-        target.destinationPortRange = destinationPortRange;
-        target.destinationPortRanges = destinationPortRanges;
-        appliedChanges = true;
-      }
-
-      if (
-        !pluralPropPairsAreEqual(
-          target.sourceAddressPrefix,
-          target.sourceAddressPrefixes,
-          sourceAddressPrefix,
-          sourceAddressPrefixes,
-        )
-      ) {
-        target.sourceAddressPrefix = sourceAddressPrefix;
-        target.sourceAddressPrefixes = sourceAddressPrefixes;
-        appliedChanges = true;
-      }
-
-      if (
-        !pluralPropPairsAreEqual(
-          target.destinationAddressPrefix,
-          target.destinationAddressPrefixes,
-          destinationAddressPrefix,
-          destinationAddressPrefixes,
-        )
-      ) {
-        target.destinationAddressPrefix = destinationAddressPrefix;
-        target.destinationAddressPrefixes = destinationAddressPrefixes;
-        appliedChanges = true;
-      }
-
-      if (sourceApplicationSecurityGroups != null) {
-        target.sourceApplicationSecurityGroups = [];
-        if (applyArrayIdDescriptors(target.sourceApplicationSecurityGroups, sourceApplicationSecurityGroups)) {
-          appliedChanges = true;
-        }
-      }
-
-      if (destinationApplicationSecurityGroups != null) {
-        target.destinationApplicationSecurityGroups = [];
-        if (
-          applyArrayIdDescriptors(target.destinationApplicationSecurityGroups, destinationApplicationSecurityGroups)
-        ) {
-          appliedChanges = true;
-        }
-      }
-
-      return appliedChanges;
-    }
 
     let subscriptionId = opContext.subscriptionId;
     const location = opContext.location;
@@ -686,25 +701,7 @@ export class NetworkTools {
         throw new Error(`Specified location ${location} conflicts with existing ${nsg.location}.`);
       }
 
-      if (nsgRulesNew) {
-        nsg.securityRules ??= [];
-        if (
-          applyArrayKeyedDescriptor(
-            nsg.securityRules,
-            nsgRulesNew,
-            "name",
-            applySecurityRuleDifferences,
-            shallowCloneDefinedValues,
-            {
-              deleteUnmatchedTargets: deleteUnknownRules,
-            },
-          )
-        ) {
-          upsertRequired = true;
-        }
-      }
-
-      if (applyOptionsDifferencesShallow(nsg, descriptorRest)) {
+      if (applyNsg(nsg, descriptor)) {
         upsertRequired = true;
       }
     } else {
@@ -716,9 +713,9 @@ export class NetworkTools {
       nsg = {
         name,
         location,
-        securityRules: nsgRulesNew,
-        ...descriptorRest,
       };
+
+      applyNsg(nsg, descriptor);
     }
 
     if (upsertRequired) {

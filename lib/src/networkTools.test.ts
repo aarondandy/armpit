@@ -420,7 +420,7 @@ describe("upsert nsg", () => {
     );
 
     const result = await tools.nsgUpsert(nsgName, {
-      rules: [
+      securityRules: [
         {
           name: "ssh",
           direction: "Inbound",
@@ -482,7 +482,7 @@ describe("upsert nsg", () => {
     vi.spyOn(networkClient.networkSecurityGroups, "beginCreateOrUpdateAndWait").mockRejectedValue(null!);
 
     const result = await tools.nsgUpsert(nsgName, {
-      rules: [
+      securityRules: [
         {
           name: "ssh",
           direction: "Inbound",
@@ -532,7 +532,7 @@ describe("upsert nsg", () => {
     );
 
     const result = await tools.nsgUpsert(nsgName, {
-      rules: [
+      securityRules: [
         {
           name: "ssh",
           direction: "Inbound",
@@ -614,7 +614,7 @@ describe("upsert nsg", () => {
     );
 
     const result = await tools.nsgUpsert(nsgName, {
-      rules: [
+      securityRules: [
         {
           name: "ssh",
           direction: "Inbound",

@@ -33,7 +33,7 @@ const asgs = {
 };
 
 const nsg = rg.network.nsgUpsert(`nsg-videogames-${rg.location}`, {
-  rules: [
+  securityRules: [
     {
       name: "FactoryMustGrow",
       direction: "Inbound",

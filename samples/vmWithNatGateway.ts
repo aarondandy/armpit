@@ -10,14 +10,26 @@ const targetLocation = targetEnvironment.defaultLocation ?? "centralus";
 await az.account.setOrLogin(targetEnvironment);
 
 const myIp = fetch("https://api.ipify.org/").then(r => r.text());
-let myUser = await az.account.showSignedInUser();
 
 const rg = await az.group(`samples-${targetLocation}`, targetLocation);
 const resourceHash = new NameHash(targetEnvironment.subscriptionId, rg.name, { defaultLength: 6 });
 
 const asgJump = rg.network.asgUpsert(`asg-jump`);
 
-const nsg = rg.network.nsgUpsert(`nsg-sample`, {});
+const nsg = rg.network.nsgUpsert(`nsg-sample`, {
+  securityRules: [
+    {
+      name: "WinRemoteDesktop",
+      direction: "Inbound",
+      priority: 1000,
+      access: "Allow",
+      protocol: "*",
+      sourceAddressPrefix: await myIp,
+      destinationApplicationSecurityGroups: [await asgJump],
+      destinationPortRange: "3389",
+    },
+  ],
+});
 
 const natIp = rg.network.pipUpsert(`pip-natsample-${rg.location}`, {
   sku: "Standard",
