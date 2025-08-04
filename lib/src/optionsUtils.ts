@@ -447,7 +447,7 @@ export function applyValueArrayUnordered<
 
 export function applyResourceRefProperty<
   TTarget extends { [P in TKey]?: { id?: string } },
-  TSource extends { [P in TKey]?: { id?: string } },
+  TSource extends { [P in TKey]?: { id?: string } | string },
   TKey extends keyof TSource,
 >(target: TTarget, source: TSource, key: TKey) {
   let updated = false;
@@ -462,7 +462,7 @@ export function applyResourceRefProperty<
     }
   }
 
-  const sourceId = sourceProp?.id;
+  const sourceId = typeof sourceProp === "string" ? sourceProp : sourceProp?.id;
   if (sourceId == null) {
     throw new Error("SubResource assignment with invalid ID is not supported");
   }

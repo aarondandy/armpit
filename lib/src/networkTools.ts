@@ -92,6 +92,21 @@ interface PrivateZoneVnetLinkDescriptor {
   resolutionPolicy?: `${KnownResolutionPolicy}`;
 }
 
+function applyPrivateZoneVnetLink(
+  target: VirtualNetworkLink,
+  source: PrivateZoneVnetLinkDescriptor,
+  context?: ApplyContext,
+) {
+  return applySourceToTargetObjectWithTemplate(
+    target,
+    source,
+    {
+      virtualNetwork: applyResourceRefProperty,
+    },
+    context,
+  );
+}
+
 type DelegationDescriptor = Pick<Delegation, "name" | "serviceName">;
 
 interface SubnetDescriptor extends Pick<Subnet, "name" | "addressPrefix" | "addressPrefixes"> {
@@ -853,8 +868,10 @@ export class NetworkTools {
     name: string,
     descriptorOptions: PrivateZoneVnetLinkDescriptor & PrivateDnsToolsOptions,
   ) {
-    const { options, descriptor } = splitPrivateDnsOptionsAndDescriptor(descriptorOptions);
-    const { virtualNetwork, ...descriptorRest } = descriptor;
+    const {
+      options,
+      descriptor: { virtualNetwork: givenDescriptorVnet, ...givenDescriptorRest },
+    } = splitPrivateDnsOptionsAndDescriptor(descriptorOptions);
 
     const opContext = this.#buildMergedOptions(options);
 
@@ -862,43 +879,39 @@ export class NetworkTools {
       throw new Error("A group name is required to perform DNS zone link operations");
     }
 
-    let virtualNetworkId: string | undefined;
-    if (isResourceId(virtualNetwork)) {
-      virtualNetworkId = virtualNetwork;
-    } else if (typeof virtualNetwork === "string") {
-      const vnetMatch = await this.vnetGet(virtualNetwork, options);
+    // Attempt to resolve vnet name to an ID before the upsert
+    let descriptorVnetRef: { id?: string };
+    if (givenDescriptorVnet == null) {
+      throw new Error("A virtual network is required");
+    } else if (isResourceId(givenDescriptorVnet)) {
+      descriptorVnetRef = { id: givenDescriptorVnet };
+    } else if (typeof givenDescriptorVnet === "string") {
+      const vnetMatch = await this.vnetGet(givenDescriptorVnet, options);
       if (vnetMatch == null) {
-        throw new Error(`Failed to find vnet '${virtualNetworkId}'`);
+        throw new Error(`Failed to find vnet '${givenDescriptorVnet}'`);
       }
 
-      virtualNetworkId = vnetMatch.id;
+      descriptorVnetRef = { id: vnetMatch.id };
     } else {
-      virtualNetworkId = virtualNetwork.id;
+      descriptorVnetRef = { id: givenDescriptorVnet.id };
     }
 
     let subscriptionId = opContext.subscriptionId;
-
     let upsertRequired = false;
+
     let link = await this.privateZoneVnetLinkGet(zoneName, name, options);
     if (link) {
       subscriptionId ??= extractSubscriptionFromId(link.id);
-
-      if (virtualNetworkId != null && link.virtualNetwork?.id !== virtualNetworkId) {
-        link.virtualNetwork = { id: virtualNetworkId };
-        upsertRequired = true;
-      }
-
-      if (applyOptionsDifferencesShallow(link, descriptorRest as VirtualNetworkLink)) {
-        upsertRequired = true;
-      }
     } else {
       upsertRequired = true;
       link = {
         name,
         location: "global",
-        virtualNetwork: { id: virtualNetworkId },
-        ...descriptorRest,
       };
+    }
+
+    if (applyPrivateZoneVnetLink(link, { virtualNetwork: descriptorVnetRef, ...givenDescriptorRest })) {
+      upsertRequired = true;
     }
 
     if (upsertRequired) {
