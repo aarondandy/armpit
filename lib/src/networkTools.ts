@@ -659,10 +659,7 @@ export class NetworkTools {
       }
 
       upsertRequired = true;
-      asg = {
-        name,
-        location,
-      };
+      asg = { name, location };
     }
 
     if (upsertRequired) {
@@ -720,10 +717,7 @@ export class NetworkTools {
       }
 
       upsertRequired = true;
-      nat = {
-        name,
-        location,
-      };
+      nat = { name, location };
     }
 
     if (applyNatGateway(nat, descriptor)) {
@@ -785,10 +779,7 @@ export class NetworkTools {
       }
 
       upsertRequired = true;
-      nic = {
-        name,
-        location,
-      };
+      nic = { name, location };
     }
 
     if (applyNetworkInterface(nic, descriptor)) {
@@ -864,10 +855,7 @@ export class NetworkTools {
       }
 
       upsertRequired = true;
-      nsg = {
-        name,
-        location,
-      };
+      nsg = { name, location };
     }
 
     if (applyNsg(nsg, descriptor)) {
@@ -931,10 +919,7 @@ export class NetworkTools {
       }
 
       upsertRequired = true;
-      pip = {
-        name,
-        location,
-      };
+      pip = { name, location };
     }
 
     if (applyPip(pip, descriptor)) {
@@ -1042,10 +1027,7 @@ export class NetworkTools {
       subscriptionId ??= extractSubscriptionFromId(link.id);
     } else {
       upsertRequired = true;
-      link = {
-        name,
-        location: "global",
-      };
+      link = { name, location: "global" };
     }
 
     if (applyPrivateZoneVnetLink(link, { virtualNetwork: descriptorVnetRef, ...givenDescriptorRest })) {
