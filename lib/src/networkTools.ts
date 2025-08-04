@@ -40,11 +40,10 @@ import {
   shallowCloneDefinedValues,
   applyOptionsDifferencesShallow,
   applyArrayKeyedDescriptor,
-  applyOptionsDifferencesDeep,
   applySourceToTargetObjectWithTemplate,
   createKeyedArrayPropApplyFn,
-  applySubResourceProperty,
-  applySubResourceListProperty,
+  applyResourceRefProperty,
+  applyResourceRefListProperty,
   type ApplyContext,
   applyValueArrayUnordered,
   applySourceToTargetObject,
@@ -204,8 +203,8 @@ function applySecurityRule(target: SecurityRule, source: SecurityRuleDescriptor,
       target,
       rest,
       {
-        sourceApplicationSecurityGroups: applySubResourceListProperty,
-        destinationApplicationSecurityGroups: applySubResourceListProperty,
+        sourceApplicationSecurityGroups: applyResourceRefListProperty,
+        destinationApplicationSecurityGroups: applyResourceRefListProperty,
       },
       context,
     )
@@ -263,6 +262,34 @@ function applyNsg(nsg: NetworkSecurityGroup, givenDescriptor: NsgDescriptorWithO
   );
 }
 
+function applyNameOrSkuObjectProperty<
+  TTargetItem extends { name?: string },
+  TTarget extends { [K in TKey]?: TTargetItem },
+  TSource extends { [K in TKey]?: string | { name?: string } },
+  TKey extends keyof TSource,
+>(target: TTarget, source: TSource, key: TKey, context?: ApplyContext) {
+  const sourceSkuValue = source[key] as string | undefined | { name: string };
+  const sourceSku = typeof sourceSkuValue === "string" ? { name: sourceSkuValue } : sourceSkuValue;
+  let updated = false;
+
+  if (sourceSku == null) {
+    return updated;
+  }
+
+  let targetSku = target[key] as TTargetItem;
+  if (targetSku == null) {
+    targetSku = { name: sourceSku.name } as TTargetItem;
+    target[key] = targetSku as TTarget[TKey];
+    updated = true;
+  }
+
+  if (applySourceToTargetObject(targetSku, sourceSku, context)) {
+    updated = true;
+  }
+
+  return updated;
+}
+
 interface NsgDescriptorWithOptions extends NsgDescriptor {
   deleteUnknownRules?: boolean;
 }
@@ -280,6 +307,22 @@ interface PublicIpDescriptor
   sku?: `${KnownPublicIPAddressSkuName}` | PublicIPAddress["sku"];
 }
 
+function applyPip(pip: PublicIPAddress, descriptor: PublicIpDescriptor, context?: ApplyContext) {
+  return applySourceToTargetObjectWithTemplate(
+    pip,
+    descriptor,
+    {
+      linkedPublicIPAddress: applyResourceRefProperty,
+      natGateway: applyResourceRefProperty,
+      publicIPPrefix: applyResourceRefProperty,
+      servicePublicIPAddress: applyResourceRefProperty,
+      sku: applyNameOrSkuObjectProperty,
+      zones: applyValueArrayUnordered,
+    },
+    context,
+  );
+}
+
 interface NatGatewayDescriptor
   extends Pick<
     NatGateway,
@@ -294,38 +337,17 @@ interface NatGatewayDescriptor
   sku: `${KnownNatGatewaySkuName}` | NatGateway["sku"];
 }
 
-function applyNatGatewaySkuProperty<
-  TTarget extends { [K in TKey]?: NatGateway["sku"] },
-  TSource extends { [K in TKey]?: NatGatewayDescriptor["sku"] },
-  TKey extends keyof NatGatewayDescriptor,
->(target: TTarget, source: TSource, key: TKey, context?: ApplyContext) {
-  const sourceSkuValue = source[key] as NatGatewayDescriptor["sku"];
-  const sourceSku = typeof sourceSkuValue === "string" ? { name: sourceSkuValue } : sourceSkuValue;
-
-  if (sourceSku == null) {
-    return false;
-  }
-
-  let targetSku = target[key] as NatGateway["sku"];
-  if (targetSku == null) {
-    targetSku = {};
-    target[key] = targetSku as TTarget[TKey];
-  }
-
-  return applySourceToTargetObject(targetSku, sourceSku, context);
-}
-
 function applyNatGateway(nat: NatGateway, descriptor: NatGatewayDescriptor, context?: ApplyContext) {
   return applySourceToTargetObjectWithTemplate(
     nat,
     descriptor,
     {
-      publicIpAddresses: applySubResourceListProperty,
-      publicIpAddressesV6: applySubResourceListProperty,
-      publicIpPrefixes: applySubResourceListProperty,
-      publicIpPrefixesV6: applySubResourceListProperty,
-      sku: applyNatGatewaySkuProperty,
-      sourceVirtualNetwork: applySubResourceProperty,
+      publicIpAddresses: applyResourceRefListProperty,
+      publicIpAddressesV6: applyResourceRefListProperty,
+      publicIpPrefixes: applyResourceRefListProperty,
+      publicIpPrefixesV6: applyResourceRefListProperty,
+      sku: applyNameOrSkuObjectProperty,
+      sourceVirtualNetwork: applyResourceRefProperty,
       zones: applyValueArrayUnordered,
     },
     context,
@@ -356,14 +378,14 @@ function applyIpConfiguration(
     target,
     source,
     {
-      gatewayLoadBalancer: applySubResourceProperty,
-      subnet: applySubResourceProperty,
-      publicIPAddress: applySubResourceProperty,
-      virtualNetworkTaps: applySubResourceListProperty,
-      applicationGatewayBackendAddressPools: applySubResourceListProperty,
-      loadBalancerBackendAddressPools: applySubResourceListProperty,
-      loadBalancerInboundNatRules: applySubResourceListProperty,
-      applicationSecurityGroups: applySubResourceListProperty,
+      gatewayLoadBalancer: applyResourceRefProperty,
+      subnet: applyResourceRefProperty,
+      publicIPAddress: applyResourceRefProperty,
+      virtualNetworkTaps: applyResourceRefListProperty,
+      applicationGatewayBackendAddressPools: applyResourceRefListProperty,
+      loadBalancerBackendAddressPools: applyResourceRefListProperty,
+      loadBalancerInboundNatRules: applyResourceRefListProperty,
+      applicationSecurityGroups: applyResourceRefListProperty,
     },
     context,
   );
@@ -383,7 +405,7 @@ interface NetworkInterfaceDescriptor
 
 function applyNetworkInterface(nic: NetworkInterface, descriptor: NetworkInterfaceDescriptor) {
   return applySourceToTargetObjectWithTemplate(nic, descriptor, {
-    networkSecurityGroup: applySubResourceProperty,
+    networkSecurityGroup: applyResourceRefProperty,
     ipConfigurations: createKeyedArrayPropApplyFn("name", applyIpConfiguration, true, true),
   });
 }
@@ -425,16 +447,6 @@ function pluralPropPairsAreEqual<T>(
   }
 
   return isArrayEqualUnordered(aNormalized, bNormalized, equals);
-}
-
-function applyResourceIdProperty<TTarget>(target: TTarget, key: keyof TTarget, source?: { id?: string }) {
-  if (source?.id != null && source.id != (target[key] as { id?: string })?.id) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (target as any)[key] = { id: source.id };
-    return true;
-  }
-
-  return false;
 }
 
 export class NetworkTools {
@@ -738,26 +750,15 @@ export class NetworkTools {
     name: string,
     descriptorOptions?: PublicIpDescriptor & NetworkToolsOptions,
   ): Promise<PublicIPAddress> {
-    const {
-      options,
-      descriptor: {
-        sku,
-        linkedPublicIPAddress,
-        natGateway,
-        publicIPPrefix,
-        servicePublicIPAddress,
-        zones,
-        ...descriptorRest
-      },
-    } = descriptorOptions ? splitNetworkOptionsAndDescriptor(descriptorOptions) : { descriptor: {} };
+    const { options, descriptor } = descriptorOptions
+      ? splitNetworkOptionsAndDescriptor(descriptorOptions)
+      : { descriptor: {} };
 
     const opContext = this.#buildMergedOptions(options);
 
     if (opContext.groupName == null) {
       throw new Error("A group name is required to perform NSG operations.");
     }
-
-    const skuDescriptor = typeof sku === "string" ? { name: sku } : sku;
 
     let upsertRequired = false;
     let pip = await this.pipGet(name, options);
@@ -771,41 +772,6 @@ export class NetworkTools {
       if (location != null && pip.location != null && !locationNameOrCodeEquals(location, pip.location)) {
         throw new Error(`Specified location ${location} conflicts with existing ${pip.location}.`);
       }
-
-      if (skuDescriptor != null) {
-        pip.sku ??= {};
-        if (applyOptionsDifferencesDeep(pip.sku, skuDescriptor)) {
-          upsertRequired = true;
-        }
-      }
-
-      if (zones != null) {
-        pip.zones ??= [];
-        if (isArrayEqualUnordered(pip.zones, zones)) {
-          pip.zones = [...zones];
-          upsertRequired = true;
-        }
-      }
-
-      if (applyResourceIdProperty(pip, "linkedPublicIPAddress", linkedPublicIPAddress)) {
-        upsertRequired = true;
-      }
-
-      if (applyResourceIdProperty(pip, "servicePublicIPAddress", servicePublicIPAddress)) {
-        upsertRequired = true;
-      }
-
-      if (applyResourceIdProperty(pip, "natGateway", natGateway)) {
-        upsertRequired = true;
-      }
-
-      if (applyResourceIdProperty(pip, "publicIPPrefix", publicIPPrefix)) {
-        upsertRequired = true;
-      }
-
-      if (applyOptionsDifferencesDeep(pip, descriptorRest)) {
-        upsertRequired = true;
-      }
     } else {
       if (location == null) {
         throw new Error("A location is required");
@@ -815,14 +781,11 @@ export class NetworkTools {
       pip = {
         name,
         location,
-        sku: skuDescriptor,
-        linkedPublicIPAddress,
-        natGateway,
-        publicIPPrefix,
-        servicePublicIPAddress,
-        zones,
-        ...descriptorRest,
       };
+    }
+
+    if (applyPip(pip, descriptor)) {
+      upsertRequired = true;
     }
 
     if (upsertRequired) {

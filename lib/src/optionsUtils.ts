@@ -445,7 +445,7 @@ export function applyValueArrayUnordered<
   return appliedChanges;
 }
 
-export function applySubResourceProperty<
+export function applyResourceRefProperty<
   TTarget extends { [P in TKey]?: { id?: string } },
   TSource extends { [P in TKey]?: { id?: string } },
   TKey extends keyof TSource,
@@ -475,7 +475,7 @@ export function applySubResourceProperty<
   return updated;
 }
 
-export function applySubResourceListProperty<
+export function applyResourceRefListProperty<
   TTargetItem extends { id?: string },
   TSource extends { [P in TKey]?: { id?: string }[] },
   TKey extends keyof TSource,

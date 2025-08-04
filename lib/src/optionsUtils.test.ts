@@ -3,7 +3,7 @@ import {
   applySourceToTargetObject,
   applySourceToTargetObjectWithTemplate,
   createKeyedArrayPropApplyFn,
-  applySubResourceListProperty,
+  applyResourceRefListProperty,
 } from "./optionsUtils.js";
 
 describe("apply options without template", () => {
@@ -189,7 +189,7 @@ describe("apply sub-resource reference lists", () => {
     const result = applySourceToTargetObjectWithTemplate(
       target,
       { items: [] },
-      { items: applySubResourceListProperty },
+      { items: applyResourceRefListProperty },
     );
     expect(result).toBe(false);
     expect(target).toStrictEqual({ items: [] });
@@ -200,7 +200,7 @@ describe("apply sub-resource reference lists", () => {
     const result = applySourceToTargetObjectWithTemplate(
       target,
       { items: [{ id: "/abc/123" }] },
-      { items: applySubResourceListProperty },
+      { items: applyResourceRefListProperty },
     );
     expect(result).toBe(true);
     expect(target).toStrictEqual({ items: [{ id: "/abc/123" }] });
@@ -211,7 +211,7 @@ describe("apply sub-resource reference lists", () => {
     const result = applySourceToTargetObjectWithTemplate(
       target,
       { items: [] },
-      { items: applySubResourceListProperty },
+      { items: applyResourceRefListProperty },
     );
     expect(result).toBe(true);
     expect(target).toStrictEqual({ items: [] });
@@ -222,7 +222,7 @@ describe("apply sub-resource reference lists", () => {
     const result = applySourceToTargetObjectWithTemplate(
       target,
       { items: [{ id: "/abc/456" }] },
-      { items: applySubResourceListProperty },
+      { items: applyResourceRefListProperty },
     );
     expect(result).toBe(true);
     expect(target).toStrictEqual({ items: [{ id: "/abc/456" }] });
