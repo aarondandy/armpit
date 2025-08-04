@@ -549,10 +549,6 @@ export class NetworkTools {
       if (location != null && nat.location != null && !locationNameOrCodeEquals(location, nat.location)) {
         throw new Error(`Specified location ${location} conflicts with existing ${nat.location}.`);
       }
-
-      if (applyNatGateway(nat, descriptor)) {
-        upsertRequired = true;
-      }
     } else {
       if (location == null) {
         throw new Error("A location is required");
@@ -563,8 +559,10 @@ export class NetworkTools {
         name,
         location,
       };
+    }
 
-      applyNatGateway(nat, descriptor);
+    if (applyNatGateway(nat, descriptor)) {
+      upsertRequired = true;
     }
 
     if (upsertRequired) {
@@ -596,10 +594,7 @@ export class NetworkTools {
     name: string,
     descriptorOptions: NetworkInterfaceDescriptor & NetworkToolsOptions,
   ): Promise<NetworkInterface> {
-    const {
-      options,
-      descriptor, //: { ipConfigurations, networkSecurityGroup, ...descriptorRest },
-    } = splitNetworkOptionsAndDescriptor(descriptorOptions);
+    const { options, descriptor } = splitNetworkOptionsAndDescriptor(descriptorOptions);
 
     const opContext = this.#buildMergedOptions(options);
 
@@ -619,10 +614,6 @@ export class NetworkTools {
       if (location != null && nic.location != null && !locationNameOrCodeEquals(location, nic.location)) {
         throw new Error(`Specified location ${location} conflicts with existing ${nic.location}.`);
       }
-
-      if (applyNetworkInterface(nic, descriptor)) {
-        upsertRequired = true;
-      }
     } else {
       if (location == null) {
         throw new Error("A location is required");
@@ -633,8 +624,10 @@ export class NetworkTools {
         name,
         location,
       };
+    }
 
-      applyNetworkInterface(nic, descriptor);
+    if (applyNetworkInterface(nic, descriptor)) {
+      upsertRequired = true;
     }
 
     if (upsertRequired) {
@@ -700,10 +693,6 @@ export class NetworkTools {
       if (location != null && nsg.location != null && !locationNameOrCodeEquals(location, nsg.location)) {
         throw new Error(`Specified location ${location} conflicts with existing ${nsg.location}.`);
       }
-
-      if (applyNsg(nsg, descriptor)) {
-        upsertRequired = true;
-      }
     } else {
       if (location == null) {
         throw new Error("A location is required");
@@ -714,8 +703,10 @@ export class NetworkTools {
         name,
         location,
       };
+    }
 
-      applyNsg(nsg, descriptor);
+    if (applyNsg(nsg, descriptor)) {
+      upsertRequired = true;
     }
 
     if (upsertRequired) {
