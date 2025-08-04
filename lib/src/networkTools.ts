@@ -38,8 +38,6 @@ import { isArrayEqualUnordered, mergeAbortSignals } from "./tsUtils.js";
 import {
   shallowMergeDefinedValues,
   shallowCloneDefinedValues,
-  applyOptionsDifferencesShallow,
-  applyArrayKeyedDescriptor,
   applySourceToTargetObjectWithTemplate,
   createKeyedArrayPropApplyFn,
   applyResourceRefProperty,
@@ -109,8 +107,25 @@ function applyPrivateZoneVnetLink(
 
 type DelegationDescriptor = Pick<Delegation, "name" | "serviceName">;
 
+function applyDelegation(target: Delegation, source: DelegationDescriptor, context?: ApplyContext) {
+  const { serviceName, ...rest } = source;
+  let appliedChanges = false;
+
+  if (serviceName != null) {
+    if (target.serviceName == null) {
+      target.serviceName = serviceName;
+    } else if (target.serviceName !== serviceName) {
+      throw new Error("Service name mismatch");
+    }
+  }
+
+  if (applySourceToTargetObject(target, rest, context)) {
+    appliedChanges = true;
+  }
+  return appliedChanges;
+}
+
 interface SubnetDescriptor extends Pick<Subnet, "name" | "addressPrefix" | "addressPrefixes"> {
-  // TODO: networkSecurityGroup
   // TODO: routeTable
   // TODO: serviceEndpoints, serviceEndpointPolicies
   // TODO: ipAllocations
@@ -124,6 +139,71 @@ interface SubnetDescriptor extends Pick<Subnet, "name" | "addressPrefix" | "addr
   defaultOutboundAccess?: boolean;
 }
 
+function applySubnet(target: Subnet, source: SubnetDescriptor, context?: ApplyContext) {
+  const { name, addressPrefix, addressPrefixes, delegations: givenDelegations, ...rest } = source;
+
+  let appliedChanges = false;
+  if (target.name == null) {
+    target.name = name;
+    appliedChanges = true;
+  } else if (target.name !== name) {
+    throw new Error("Name mismatch");
+  }
+
+  if (!pluralPropPairsAreEqual(target.addressPrefix, target.addressPrefixes, addressPrefix, addressPrefixes)) {
+    target.addressPrefix = addressPrefix;
+    target.addressPrefixes = addressPrefixes;
+    appliedChanges = true;
+  }
+
+  let delegationDescriptors: DelegationDescriptor[] | undefined;
+  if (givenDelegations != null) {
+    delegationDescriptors = (Array.isArray(givenDelegations) ? givenDelegations : [givenDelegations]).map(d =>
+      typeof d === "string" ? { serviceName: d } : { ...d },
+    );
+
+    function assignDelegateNames(delegations: DelegationDescriptor[]) {
+      for (let index = 0; index < delegations.length; index++) {
+        const delegation = delegations[index];
+        if (delegation.name == null || delegation.name === "") {
+          delegation.name = findNextAvailableNumberName(index);
+        }
+      }
+
+      function findNextAvailableNumberName(index: number) {
+        for (; ; index++) {
+          const nameCandidate = index.toString();
+          if (!delegations.some(d => d.name === nameCandidate)) {
+            return nameCandidate;
+          }
+        }
+      }
+    }
+
+    assignDelegateNames(delegationDescriptors);
+  }
+
+  if (
+    applySourceToTargetObjectWithTemplate(
+      target,
+      {
+        delegations: delegationDescriptors,
+        ...rest,
+      },
+      {
+        delegations: createKeyedArrayPropApplyFn("serviceName", applyDelegation, true, true),
+        natGateway: applyResourceRefProperty,
+        networkSecurityGroup: applyResourceRefProperty,
+      },
+      context,
+    )
+  ) {
+    appliedChanges = true;
+  }
+
+  return appliedChanges;
+}
+
 interface VnetDescriptor extends Pick<VirtualNetwork, "flowTimeoutInMinutes"> {
   // TODO: dhcpOptions
   // TODO: virtualNetworkPeerings
@@ -135,8 +215,53 @@ interface VnetDescriptor extends Pick<VirtualNetwork, "flowTimeoutInMinutes"> {
   addressSpace?: { addressPrefixes?: string[] };
   addressPrefix?: string;
   subnets?: SubnetDescriptor[];
-  deleteUnknownSubnets?: boolean;
   privateEndpointVNetPolicies?: `${KnownPrivateEndpointVNetPolicies}`;
+}
+
+interface VnetDescriptorWithOptions extends VnetDescriptor {
+  deleteUnknownSubnets?: boolean;
+}
+
+function applyVnet(target: VirtualNetwork, source: VnetDescriptorWithOptions, context?: ApplyContext) {
+  const { deleteUnknownSubnets, addressPrefix, addressSpace, ...descriptorRest } = source;
+  let appliedChanges = false;
+
+  let addressSpaceDescriptor: VnetDescriptor["addressSpace"] | undefined;
+  if (addressPrefix != null && addressSpace != null) {
+    throw new Error("Can only specify one of addressPrefix or addressSpace");
+  } else if (addressPrefix != null) {
+    addressSpaceDescriptor = { addressPrefixes: [addressPrefix] };
+  } else if (addressSpace != null) {
+    addressSpaceDescriptor = addressSpace;
+  }
+
+  if (addressSpaceDescriptor != null) {
+    if (target.addressSpace == null) {
+      target.addressSpace = {};
+      appliedChanges = true;
+    }
+
+    if (addressSpaceDescriptor.addressPrefixes != null) {
+      if (applyValueArrayUnordered(target.addressSpace, addressSpaceDescriptor, "addressPrefixes")) {
+        appliedChanges = true;
+      }
+    }
+  }
+
+  if (
+    applySourceToTargetObjectWithTemplate(
+      target,
+      descriptorRest,
+      {
+        subnets: createKeyedArrayPropApplyFn("name", applySubnet, true, !!deleteUnknownSubnets),
+      },
+      context,
+    )
+  ) {
+    appliedChanges = true;
+  }
+
+  return appliedChanges;
 }
 
 interface SecurityRuleDescriptor extends Omit<SecurityRule, "id" | "etag" | "type" | "provisioningState"> {
@@ -939,172 +1064,29 @@ export class NetworkTools {
     return this.#getLaxInvokerFn(options)<NetworkSecurityGroup>`network vnet show ${args}`;
   }
 
-  async vnetUpsert(name: string, optionsDescriptor?: VnetDescriptor & NetworkToolsOptions): Promise<VirtualNetwork> {
-    const {
-      options,
-      descriptor: { deleteUnknownSubnets, subnets, addressPrefix, addressSpace, ...descriptorRest },
-    } = optionsDescriptor ? splitNetworkOptionsAndDescriptor(optionsDescriptor) : { descriptor: {} };
+  async vnetUpsert(
+    name: string,
+    optionsDescriptor?: VnetDescriptorWithOptions & NetworkToolsOptions,
+  ): Promise<VirtualNetwork> {
+    const { options, descriptor } = optionsDescriptor
+      ? splitNetworkOptionsAndDescriptor(optionsDescriptor)
+      : { descriptor: {} };
     const opContext = this.#buildMergedOptions(options);
 
     if (opContext.groupName == null) {
       throw new Error("A group name is required to perform network operations.");
     }
 
-    let addressSpaceDescriptor: VnetDescriptor["addressSpace"];
-    if (addressPrefix != null && addressSpace != null) {
-      throw new Error("Can only specify one of addressPrefix or addressSpace");
-    } else if (addressPrefix != null) {
-      addressSpaceDescriptor = { addressPrefixes: [addressPrefix] };
-    } else if (addressSpace != null) {
-      addressSpaceDescriptor = addressSpace;
-    } else {
-      addressSpaceDescriptor = undefined;
-    }
-
     let upsertRequired = false;
-    let vnet = await this.vnetGet(name, options);
-
-    const subnetsNew = subnets?.map(descriptor => {
-      function assignDelegateNames(delegations: Delegation[]) {
-        for (let index = 0; index < delegations.length; index++) {
-          const delegation = delegations[index];
-          if (delegation.name == null || delegation.name === "") {
-            delegation.name = findNextAvailableNumberName(index);
-          }
-        }
-
-        function findNextAvailableNumberName(index: number) {
-          for (; ; index++) {
-            const nameCandidate = index.toString();
-            if (!delegations.some(d => d.name === nameCandidate)) {
-              return nameCandidate;
-            }
-          }
-        }
-      }
-
-      const { networkSecurityGroup, delegations, ...descriptorRest } = descriptor;
-
-      const result = {
-        ...descriptorRest,
-      } as Subnet; // a shallow clone should be safe enough
-
-      if (networkSecurityGroup) {
-        result.networkSecurityGroup = { id: networkSecurityGroup.id };
-      }
-
-      if (delegations) {
-        result.delegations = (Array.isArray(delegations) ? delegations : [delegations]).map(d =>
-          typeof d === "string" ? { serviceName: d } : { ...d },
-        );
-        assignDelegateNames(result.delegations); // TODO: This should be done at the time of the assignment for best compatibility with existing data
-      }
-
-      return result;
-    });
-
-    function applySubnetDifferences(target: Subnet, source: Subnet) {
-      const {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        id: id,
-        name: name,
-        addressPrefix,
-        addressPrefixes,
-        delegations,
-        networkSecurityGroup,
-        natGateway,
-        ...sourceRest
-      } = source;
-
-      let appliedChanges = false;
-
-      if (target.name == null) {
-        target.name = name;
-        appliedChanges = true;
-      }
-
-      if (applyOptionsDifferencesShallow(target, sourceRest)) {
-        appliedChanges = true;
-      }
-
-      if (!pluralPropPairsAreEqual(target.addressPrefix, target.addressPrefixes, addressPrefix, addressPrefixes)) {
-        target.addressPrefix = addressPrefix;
-        target.addressPrefixes = addressPrefixes;
-        appliedChanges = true;
-      }
-
-      if (delegations) {
-        target.delegations ??= [];
-        if (
-          applyArrayKeyedDescriptor(
-            target.delegations,
-            delegations,
-            "serviceName",
-            applyOptionsDifferencesShallow,
-            shallowCloneDefinedValues,
-            {
-              deleteUnmatchedTargets: deleteUnknownSubnets,
-            },
-          )
-        ) {
-          appliedChanges = true;
-        }
-      }
-
-      if (networkSecurityGroup?.id != null && target.networkSecurityGroup?.id != networkSecurityGroup.id) {
-        target.networkSecurityGroup = { id: networkSecurityGroup.id };
-        appliedChanges = true;
-      }
-
-      if (natGateway?.id != null && target.natGateway?.id != natGateway.id) {
-        target.natGateway = { id: natGateway.id };
-        appliedChanges = true;
-      }
-
-      return appliedChanges;
-    }
-
     let subscriptionId = opContext.subscriptionId;
     const location = opContext.location;
 
+    let vnet = await this.vnetGet(name, options);
     if (vnet) {
       subscriptionId ??= extractSubscriptionFromId(vnet.id);
 
       if (location != null && vnet.location != null && !locationNameOrCodeEquals(location, vnet.location)) {
         throw new Error(`Specified location ${location} conflicts with existing ${vnet.location}.`);
-      }
-
-      if (addressSpaceDescriptor) {
-        vnet.addressSpace ??= {};
-        if (addressSpaceDescriptor.addressPrefixes != null) {
-          vnet.addressSpace.addressPrefixes ??= [];
-          if (!isArrayEqualUnordered(vnet.addressSpace.addressPrefixes, addressSpaceDescriptor.addressPrefixes)) {
-            vnet.addressSpace.addressPrefixes = addressSpaceDescriptor.addressPrefixes;
-            upsertRequired = true;
-          }
-        }
-      }
-
-      if (subnetsNew) {
-        vnet.subnets ??= [];
-        if (
-          applyArrayKeyedDescriptor(
-            vnet.subnets,
-            subnetsNew,
-            "name",
-            applySubnetDifferences,
-            shallowCloneDefinedValues,
-            {
-              deleteUnmatchedTargets: deleteUnknownSubnets,
-            },
-          )
-        ) {
-          upsertRequired = true;
-        }
-      }
-
-      if (applyOptionsDifferencesShallow(vnet, descriptorRest)) {
-        upsertRequired = true;
       }
     } else {
       if (location == null) {
@@ -1112,13 +1094,11 @@ export class NetworkTools {
       }
 
       upsertRequired = true;
-      vnet = {
-        name,
-        location,
-        addressSpace: addressSpaceDescriptor,
-        subnets: subnetsNew,
-        ...descriptorRest,
-      };
+      vnet = { name, location };
+    }
+
+    if (applyVnet(vnet, descriptor)) {
+      upsertRequired = true;
     }
 
     if (upsertRequired) {

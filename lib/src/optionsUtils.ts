@@ -193,8 +193,8 @@ export function applyObjectKeyProperties<TTarget extends TSource, TSource extend
 type ApplyOptionsResult = boolean;
 
 type ApplyObjectPropFn<
-  TTarget extends { [K in keyof TSource]?: TTarget[K] },
-  TSource extends { [K in keyof TSource]?: TSource[K] },
+  TTarget extends { [K in TKey]?: TTarget[K] },
+  TSource extends { [K in TKey]?: TSource[K] },
   TKey extends keyof TSource,
 > = (
   target: { [P in TKey]?: TTarget[P] },
