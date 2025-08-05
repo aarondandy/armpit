@@ -3,7 +3,6 @@ import type {
   ManagedEnvironment,
   ContainerApp,
   ManagedServiceIdentity,
-  UserAssignedIdentity,
   KnownManagedServiceIdentityType,
   Configuration,
   Ingress,
@@ -14,12 +13,19 @@ import type {
 import { ContainerAppsAPIClient } from "@azure/arm-appcontainers";
 import { mergeAbortSignals, isArrayEqual } from "./tsUtils.js";
 import {
-  shallowCloneDefinedValues,
-  shallowMergeDefinedValues,
+  applyArrayKeyedDescriptor,
   applyOptionsDifferencesShallow,
   applyOptionsDifferencesDeep,
   applyObjectKeyProperties,
-  applyArrayKeyedDescriptor,
+  applyResourceRefListProperty,
+  applyResourceRefProperty,
+  applySourceToTargetObjectWithTemplate,
+  applySourceToTargetObject,
+  applyUnorderedValueArrayProp,
+  createKeyedArrayPropApplyFn,
+  shallowCloneDefinedValues,
+  shallowMergeDefinedValues,
+  type ApplyContext,
 } from "./optionsUtils.js";
 import { type SubscriptionId, extractSubscriptionFromId, locationNameOrCodeEquals } from "./azureUtils.js";
 import { ManagementClientFactory, handleGet } from "./azureSdkUtils.js";
@@ -40,11 +46,58 @@ function splitContainerAppOptionsAndDescriptor<T extends ContainerAppToolsOption
   };
 }
 
+type UserAssignedIdentityDescriptor = object;
+
 interface ManagedServiceIdentityDescriptor extends Pick<ManagedServiceIdentity, "type"> {
   type: `${KnownManagedServiceIdentityType}`;
   userAssignedIdentities?: {
-    [propertyName: string]: Omit<UserAssignedIdentity, "principalId" | "clientId">;
+    [propertyName: string]: UserAssignedIdentityDescriptor;
   };
+}
+
+function applyManagedServiceIdentityProperty<
+  TTarget extends { [K in TKey]?: ManagedServiceIdentity },
+  TSource extends { [K in TKey]?: ManagedServiceIdentityDescriptor },
+  TKey extends keyof TSource,
+>(targetObj: TTarget, sourceObj: TSource, key: TKey, context?: ApplyContext) {
+  let appliedChanges = false;
+  const sourceValue = sourceObj[key] as ManagedServiceIdentityDescriptor | undefined;
+  if (sourceValue == null) {
+    if (sourceValue === null) {
+      throw new Error("Null managed service identity assignment is not supported");
+    } else {
+      return appliedChanges;
+    }
+  }
+
+  let targetValue = targetObj[key] as ManagedServiceIdentity | undefined;
+  if (targetValue == null) {
+    targetValue = { type: sourceValue.type };
+    targetObj[key] = targetValue as TTarget[TKey];
+    appliedChanges = true;
+  }
+
+  const { userAssignedIdentities, ...rest } = sourceValue;
+
+  targetValue.userAssignedIdentities ??= {};
+  if (
+    applyObjectKeyProperties(
+      targetValue.userAssignedIdentities,
+      userAssignedIdentities ?? {},
+      (k, t, s) => {
+        t[k] = s[k] ?? {};
+      },
+      true,
+    )
+  ) {
+    appliedChanges = true;
+  }
+
+  if (applySourceToTargetObject(targetValue, rest, context)) {
+    appliedChanges = true;
+  }
+
+  return appliedChanges;
 }
 
 function applyIdentityOptions(target: ManagedServiceIdentity, descriptor: ManagedServiceIdentityDescriptor) {
@@ -78,19 +131,43 @@ function applyIdentityOptions(target: ManagedServiceIdentity, descriptor: Manage
 interface ManagedEnvironmentDescriptor
   extends Pick<
     ManagedEnvironment,
+    | "daprAIInstrumentationKey"
+    | "daprAIConnectionString"
     | "vnetConfiguration"
     | "appLogsConfiguration"
     | "zoneRedundant"
-    | "daprAIInstrumentationKey"
-    | "daprAIConnectionString"
     | "workloadProfiles"
+    | "infrastructureResourceGroup"
+    | "peerAuthentication"
+    | "peerTrafficConfiguration"
+    // TODO: customDomainConfiguration
   > {
   identity?: ManagedServiceIdentityDescriptor;
 }
-// TODO: customDomainConfiguration
-// TODO: infrastructureResourceGroup
-// TODO: peerAuthentication
-// TODO: peerTrafficConfiguration
+
+function applyManagedEnvironment(
+  env: ManagedEnvironment,
+  descriptor: ManagedEnvironmentDescriptor,
+  context?: ApplyContext,
+) {
+  let appliedChanges = false;
+
+  if (
+    applySourceToTargetObjectWithTemplate(
+      env,
+      descriptor,
+      {
+        identity: applyManagedServiceIdentityProperty,
+        workloadProfiles: createKeyedArrayPropApplyFn("name", applySourceToTargetObject, true, true),
+      },
+      context,
+    )
+  ) {
+    appliedChanges = true;
+  }
+
+  return appliedChanges;
+}
 
 type IngressDescriptor = Omit<Ingress, "fqdn">;
 
@@ -143,10 +220,9 @@ export class ContainerAppTools {
     name: string,
     optionsDescriptor?: ManagedEnvironmentDescriptor & ContainerAppToolsOptions,
   ): Promise<ManagedEnvironment> {
-    const {
-      options,
-      descriptor: { identity, workloadProfiles, ...descriptorRest },
-    } = optionsDescriptor ? splitContainerAppOptionsAndDescriptor(optionsDescriptor) : { descriptor: {} };
+    const { options, descriptor } = optionsDescriptor
+      ? splitContainerAppOptionsAndDescriptor(optionsDescriptor)
+      : { descriptor: {} };
 
     const opContext = this.#buildMergedOptions(options);
 
@@ -166,49 +242,17 @@ export class ContainerAppTools {
       if (location != null && appEnv.location != null && !locationNameOrCodeEquals(location, appEnv.location)) {
         throw new Error(`Specified location ${location} conflicts with existing ${appEnv.location}.`);
       }
-
-      if (identity != null) {
-        if (appEnv.identity != null) {
-          if (applyIdentityOptions(appEnv.identity, identity)) {
-            upsertRequired = true;
-          }
-        } else {
-          appEnv.identity = shallowCloneDefinedValues(identity);
-          upsertRequired = true;
-        }
-      }
-
-      if (workloadProfiles != null) {
-        appEnv.workloadProfiles ??= [];
-        if (
-          applyArrayKeyedDescriptor(
-            appEnv.workloadProfiles,
-            workloadProfiles,
-            "name",
-            applyOptionsDifferencesDeep,
-            shallowCloneDefinedValues,
-            { deleteUnmatchedTargets: true },
-          )
-        ) {
-          upsertRequired = true;
-        }
-      }
-
-      if (applyOptionsDifferencesDeep(appEnv, descriptorRest)) {
-        upsertRequired = true;
-      }
     } else {
       if (location == null) {
         throw new Error("A location is required");
       }
 
       upsertRequired = true;
-      appEnv = {
-        name,
-        location,
-        workloadProfiles,
-        ...descriptorRest,
-      };
+      appEnv = { name, location };
+    }
+
+    if (applyManagedEnvironment(appEnv, descriptor)) {
+      upsertRequired = true;
     }
 
     if (upsertRequired) {

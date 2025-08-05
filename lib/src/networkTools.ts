@@ -37,15 +37,15 @@ import type {
 import { PrivateDnsManagementClient } from "@azure/arm-privatedns";
 import { isArrayEqualUnordered, mergeAbortSignals } from "./tsUtils.js";
 import {
-  shallowMergeDefinedValues,
-  shallowCloneDefinedValues,
-  applySourceToTargetObjectWithTemplate,
-  createKeyedArrayPropApplyFn,
-  applyResourceRefProperty,
   applyResourceRefListProperty,
-  type ApplyContext,
-  applyUnorderedValueArrayProp,
+  applyResourceRefProperty,
+  applySourceToTargetObjectWithTemplate,
   applySourceToTargetObject,
+  applyUnorderedValueArrayProp,
+  createKeyedArrayPropApplyFn,
+  shallowCloneDefinedValues,
+  shallowMergeDefinedValues,
+  type ApplyContext,
 } from "./optionsUtils.js";
 import {
   type SubscriptionId,
