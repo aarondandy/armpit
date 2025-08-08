@@ -8,20 +8,18 @@ import type {
   Ingress,
   Template,
   KnownActiveRevisionsMode,
+  KnownIngressTransportMethod,
+  KnownIngressClientCertificateMode,
   BaseContainer,
 } from "@azure/arm-appcontainers";
 import { ContainerAppsAPIClient } from "@azure/arm-appcontainers";
-import { mergeAbortSignals, isArrayEqual } from "./tsUtils.js";
+import { mergeAbortSignals } from "./tsUtils.js";
 import {
-  applyArrayKeyedDescriptor,
-  applyOptionsDifferencesShallow,
-  applyOptionsDifferencesDeep,
   applyObjectKeyProperties,
-  applyResourceRefListProperty,
-  applyResourceRefProperty,
   applySourceToTargetObjectWithTemplate,
   applySourceToTargetObject,
   applyUnorderedValueArrayProp,
+  wrapPropObjectApply,
   createKeyedArrayPropApplyFn,
   shallowCloneDefinedValues,
   shallowMergeDefinedValues,
@@ -55,77 +53,39 @@ interface ManagedServiceIdentityDescriptor extends Pick<ManagedServiceIdentity, 
   };
 }
 
-function applyManagedServiceIdentityProperty<
-  TTarget extends { [K in TKey]?: ManagedServiceIdentity },
-  TSource extends { [K in TKey]?: ManagedServiceIdentityDescriptor },
-  TKey extends keyof TSource,
->(targetObj: TTarget, sourceObj: TSource, key: TKey, context?: ApplyContext) {
+function applyManagedServiceIdentity(
+  target: ManagedServiceIdentity,
+  source: ManagedServiceIdentityDescriptor,
+  context?: ApplyContext,
+) {
   let appliedChanges = false;
-  const sourceValue = sourceObj[key] as ManagedServiceIdentityDescriptor | undefined;
-  if (sourceValue == null) {
-    if (sourceValue === null) {
-      throw new Error("Null managed service identity assignment is not supported");
-    } else {
-      return appliedChanges;
+  const { userAssignedIdentities, ...rest } = source;
+
+  if (userAssignedIdentities == null) {
+    if (userAssignedIdentities === null && target.userAssignedIdentities != null) {
+      delete target.userAssignedIdentities;
     }
-  }
-
-  let targetValue = targetObj[key] as ManagedServiceIdentity | undefined;
-  if (targetValue == null) {
-    targetValue = { type: sourceValue.type };
-    targetObj[key] = targetValue as TTarget[TKey];
-    appliedChanges = true;
-  }
-
-  const { userAssignedIdentities, ...rest } = sourceValue;
-
-  targetValue.userAssignedIdentities ??= {};
-  if (
-    applyObjectKeyProperties(
-      targetValue.userAssignedIdentities,
-      userAssignedIdentities ?? {},
-      (k, t, s) => {
-        t[k] = s[k] ?? {};
-      },
-      true,
-    )
-  ) {
-    appliedChanges = true;
-  }
-
-  if (applySourceToTargetObject(targetValue, rest, context)) {
-    appliedChanges = true;
-  }
-
-  return appliedChanges;
-}
-
-function applyIdentityOptions(target: ManagedServiceIdentity, descriptor: ManagedServiceIdentityDescriptor) {
-  const { userAssignedIdentities, ...descriptorRest } = descriptor;
-  let updated = false;
-
-  if (userAssignedIdentities != null) {
+  } else {
     target.userAssignedIdentities ??= {};
-
     if (
       applyObjectKeyProperties(
         target.userAssignedIdentities,
-        userAssignedIdentities,
+        userAssignedIdentities ?? {},
         (k, t, s) => {
           t[k] = s[k] ?? {};
         },
         true,
       )
     ) {
-      updated = true;
+      appliedChanges = true;
     }
   }
 
-  if (applyOptionsDifferencesShallow(target, descriptorRest as ManagedServiceIdentity)) {
-    updated = true;
+  if (applySourceToTargetObject(target, rest, context)) {
+    appliedChanges = true;
   }
 
-  return updated;
+  return appliedChanges;
 }
 
 interface ManagedEnvironmentDescriptor
@@ -157,7 +117,7 @@ function applyManagedEnvironment(
       env,
       descriptor,
       {
-        identity: applyManagedServiceIdentityProperty,
+        identity: wrapPropObjectApply(applyManagedServiceIdentity),
         workloadProfiles: createKeyedArrayPropApplyFn("name", applySourceToTargetObject, true, true),
       },
       context,
@@ -169,19 +129,94 @@ function applyManagedEnvironment(
   return appliedChanges;
 }
 
-type IngressDescriptor = Omit<Ingress, "fqdn">;
+interface IngressDescriptor extends Omit<Ingress, "fqdn" | "transport" | "clientCertificateMode"> {
+  transport?: `${KnownIngressTransportMethod}`;
+  clientCertificateMode?: `${KnownIngressClientCertificateMode}`;
+}
 
 interface ConfigurationDescriptor extends Omit<Configuration, "activeRevisionsMode" | "ingress"> {
   activeRevisionsMode?: `${KnownActiveRevisionsMode}`;
   ingress?: IngressDescriptor;
 }
 
+function applyConfiguration(config: Configuration, descriptor: ConfigurationDescriptor, context?: ApplyContext) {
+  let appliedChanges = false;
+  if (
+    applySourceToTargetObjectWithTemplate(
+      config,
+      descriptor,
+      {
+        identitySettings: createKeyedArrayPropApplyFn("identity", applySourceToTargetObject, true, true),
+        registries: createKeyedArrayPropApplyFn("server", applySourceToTargetObject, true, true),
+        secrets: createKeyedArrayPropApplyFn("name", applySourceToTargetObject, true, true),
+      },
+      context,
+    )
+  ) {
+    appliedChanges = true;
+  }
+
+  return appliedChanges;
+}
+
 type TemplateDescriptor = Template;
 
+function applyContainer(target: BaseContainer, source: BaseContainer, context?: ApplyContext) {
+  return applySourceToTargetObjectWithTemplate(
+    target,
+    source,
+    {
+      args: applyUnorderedValueArrayProp,
+      command: applyUnorderedValueArrayProp,
+      env: createKeyedArrayPropApplyFn("name", applySourceToTargetObject, true, true),
+      volumeMounts: createKeyedArrayPropApplyFn("volumeName", applySourceToTargetObject, true, true),
+    },
+    context,
+  );
+}
+
+function applyContainerTemplate(template: Template, descriptor: TemplateDescriptor, context?: ApplyContext) {
+  return applySourceToTargetObjectWithTemplate(
+    template,
+    descriptor,
+    {
+      initContainers: createKeyedArrayPropApplyFn("name", applyContainer, true, true),
+      containers: createKeyedArrayPropApplyFn("name", applyContainer, true, true),
+      scale: {
+        rules: createKeyedArrayPropApplyFn("name", applySourceToTargetObject, true, true),
+      },
+      serviceBinds: createKeyedArrayPropApplyFn("name", applySourceToTargetObject, true, true),
+      volumes: createKeyedArrayPropApplyFn("name", applySourceToTargetObject, true, true),
+    },
+    context,
+  );
+}
+
 interface ContainerAppDescriptor extends Pick<ContainerApp, "environmentId" | "workloadProfileName"> {
-  identity?: ManagedServiceIdentityDescriptor;
   configuration?: ConfigurationDescriptor;
+  identity?: ManagedServiceIdentityDescriptor;
   template?: TemplateDescriptor;
+}
+
+function applyContainerApp(app: ContainerApp, descriptor: ContainerAppDescriptor, context?: ApplyContext) {
+  let appliedChanges = false;
+
+  if (
+    applySourceToTargetObjectWithTemplate(
+      app,
+      descriptor,
+      {
+        identity: wrapPropObjectApply(applyManagedServiceIdentity),
+        configuration: wrapPropObjectApply(applyConfiguration),
+        template: wrapPropObjectApply(applyContainerTemplate),
+      },
+      context,
+    )
+  ) {
+    appliedChanges = true;
+  }
+
+  return appliedChanges;
 }
 
 export class ContainerAppTools {
@@ -281,10 +316,7 @@ export class ContainerAppTools {
   }
 
   async appUpsert(name: string, optionsDescriptor: ContainerAppDescriptor & ContainerAppToolsOptions) {
-    const {
-      options,
-      descriptor: { identity, configuration, template, ...descriptorRest },
-    } = splitContainerAppOptionsAndDescriptor(optionsDescriptor);
+    const { options, descriptor } = splitContainerAppOptionsAndDescriptor(optionsDescriptor);
 
     const opContext = this.#buildMergedOptions(options);
 
@@ -304,280 +336,17 @@ export class ContainerAppTools {
       if (location != null && app.location != null && !locationNameOrCodeEquals(location, app.location)) {
         throw new Error(`Specified location ${location} conflicts with existing ${app.location}.`);
       }
-
-      if (identity != null) {
-        if (app.identity != null) {
-          if (applyIdentityOptions(app.identity, identity)) {
-            upsertRequired = true;
-          }
-        } else {
-          app.identity = shallowCloneDefinedValues(identity);
-          upsertRequired = true;
-        }
-      }
-
-      if (configuration != null) {
-        function applyConfigurationOptions(target: Configuration, source: ConfigurationDescriptor) {
-          let updated = false;
-
-          const { identitySettings, registries, secrets, service, ...descriptorRest } = source;
-
-          if (identitySettings != null) {
-            target.identitySettings ??= [];
-            if (
-              applyArrayKeyedDescriptor(
-                target.identitySettings,
-                identitySettings,
-                "identity",
-                applyOptionsDifferencesDeep,
-                shallowCloneDefinedValues,
-                { deleteUnmatchedTargets: true },
-              )
-            ) {
-              updated = true;
-            }
-          }
-
-          if (registries != null) {
-            target.registries ??= [];
-            if (
-              applyArrayKeyedDescriptor(
-                target.registries,
-                registries,
-                "server",
-                applyOptionsDifferencesShallow,
-                shallowCloneDefinedValues,
-                { deleteUnmatchedTargets: true },
-              )
-            ) {
-              updated = true;
-            }
-          }
-
-          if (secrets != null) {
-            target.secrets ??= [];
-            if (
-              applyArrayKeyedDescriptor(
-                target.secrets,
-                secrets,
-                "name",
-                applyOptionsDifferencesShallow,
-                shallowCloneDefinedValues,
-                { deleteUnmatchedTargets: true },
-              )
-            ) {
-              updated = true;
-            }
-          }
-
-          if (service != null) {
-            if (target.service == null) {
-              target.service = service;
-            } else {
-              if (applyOptionsDifferencesDeep(target.service, service)) {
-                updated = true;
-              }
-            }
-          }
-
-          // simple shallow copy
-          if (applyOptionsDifferencesDeep(target, descriptorRest as Configuration)) {
-            updated = true;
-          }
-
-          return updated;
-        }
-
-        app.configuration ??= {};
-        if (applyConfigurationOptions(app.configuration, configuration)) {
-          upsertRequired = true;
-        }
-      }
-
-      if (template != null) {
-        function applyTemplateOptions(target: Template, source: TemplateDescriptor) {
-          const { initContainers, containers, scale, serviceBinds, volumes, ...descriptorRest } = source;
-          let updated = false;
-
-          function applyContainerOptions(target: BaseContainer, source: BaseContainer) {
-            let updated = false;
-
-            const { args, command, env, volumeMounts, ...descriptorRest } = source;
-
-            if (args != null) {
-              target.args ??= [];
-              if (!isArrayEqual(target.args, args)) {
-                target.args = [...args];
-                updated = true;
-              }
-            }
-
-            if (command != null) {
-              target.command ??= [];
-              if (!isArrayEqual(target.command, command)) {
-                target.command = [...command];
-                updated = true;
-              }
-            }
-
-            if (env != null) {
-              target.env ??= [];
-              if (
-                applyArrayKeyedDescriptor(
-                  target.env,
-                  env,
-                  "name",
-                  applyOptionsDifferencesShallow,
-                  shallowCloneDefinedValues,
-                  { deleteUnmatchedTargets: true },
-                )
-              ) {
-                updated = true;
-              }
-            }
-
-            if (volumeMounts != null) {
-              target.volumeMounts ??= [];
-              if (
-                applyArrayKeyedDescriptor(
-                  target.volumeMounts,
-                  volumeMounts,
-                  "volumeName",
-                  applyOptionsDifferencesShallow,
-                  shallowCloneDefinedValues,
-                  { deleteUnmatchedTargets: true },
-                )
-              ) {
-                updated = true;
-              }
-            }
-
-            if (applyOptionsDifferencesDeep(target, descriptorRest)) {
-              updated = true;
-            }
-
-            return updated;
-          }
-
-          if (initContainers != null) {
-            target.initContainers ??= [];
-            if (
-              applyArrayKeyedDescriptor(
-                target.initContainers,
-                initContainers,
-                "name",
-                applyContainerOptions,
-                shallowCloneDefinedValues,
-                { deleteUnmatchedTargets: true },
-              )
-            ) {
-              updated = true;
-            }
-          }
-
-          if (containers != null) {
-            target.containers ??= [];
-            if (
-              applyArrayKeyedDescriptor(
-                target.containers,
-                containers,
-                "name",
-                applyContainerOptions,
-                shallowCloneDefinedValues,
-                { deleteUnmatchedTargets: true },
-              )
-            ) {
-              updated = true;
-            }
-          }
-
-          if (scale != null) {
-            const { rules: scaleRules, ...scaleRest } = scale;
-            target.scale ??= {};
-
-            if (scaleRules != null) {
-              target.scale.rules ??= [];
-              if (
-                applyArrayKeyedDescriptor(
-                  target.scale.rules,
-                  scaleRules,
-                  "name",
-                  applyOptionsDifferencesShallow,
-                  shallowCloneDefinedValues,
-                  { deleteUnmatchedTargets: true },
-                )
-              ) {
-                updated = true;
-              }
-            }
-
-            if (applyOptionsDifferencesDeep(target.scale, scaleRest)) {
-              updated = true;
-            }
-          }
-
-          if (serviceBinds != null) {
-            target.serviceBinds ??= [];
-            if (
-              applyArrayKeyedDescriptor(
-                target.serviceBinds,
-                serviceBinds,
-                "name",
-                applyOptionsDifferencesShallow,
-                shallowCloneDefinedValues,
-                { deleteUnmatchedTargets: true },
-              )
-            ) {
-              updated = true;
-            }
-          }
-
-          if (volumes != null) {
-            target.volumes ??= [];
-            if (
-              applyArrayKeyedDescriptor(
-                target.volumes,
-                volumes,
-                "name",
-                applyOptionsDifferencesShallow,
-                shallowCloneDefinedValues,
-                { deleteUnmatchedTargets: true },
-              )
-            ) {
-              updated = true;
-            }
-          }
-
-          if (applyOptionsDifferencesDeep(target, descriptorRest)) {
-            updated = true;
-          }
-
-          return updated;
-        }
-
-        app.template ??= {};
-        if (applyTemplateOptions(app.template, template)) {
-          upsertRequired = true;
-        }
-      }
-
-      if (applyOptionsDifferencesShallow(app, descriptorRest)) {
-        upsertRequired = true;
-      }
     } else {
       if (location == null) {
         throw new Error("A location is required");
       }
 
       upsertRequired = true;
-      app = {
-        name,
-        location,
-        identity,
-        configuration,
-        template,
-        ...descriptorRest,
-      };
+      app = { name, location };
+    }
+
+    if (applyContainerApp(app, descriptor)) {
+      upsertRequired = true;
     }
 
     if (upsertRequired) {

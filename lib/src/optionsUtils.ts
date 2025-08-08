@@ -195,7 +195,7 @@ type ApplyOptionsResult = boolean;
 type ApplyObjectPropFn<
   TTarget extends { [P in TProp]?: TTarget[P] },
   TSource extends { [P in TProp]?: TSource[P] },
-  TProp extends keyof TSource,
+  TProp extends keyof TSource & keyof TTarget,
 > = (
   target: { [P in TProp]?: TTarget[P] },
   source: { [P in TProp]: TSource[P] },
@@ -204,7 +204,7 @@ type ApplyObjectPropFn<
 ) => ApplyOptionsResult;
 
 type ApplyObjectFn<
-  TTarget extends { [P in keyof TSource]?: TTarget[P] },
+  TTarget extends { [P in keyof TSource & keyof TTarget]?: TTarget[P] },
   TSource extends { [P in keyof TSource]?: TSource[P] },
 > = (target: TTarget, source: TSource, context?: ApplyContext) => ApplyOptionsResult;
 
@@ -220,6 +220,39 @@ type ApplyObjectTemplate<
 
 export interface ApplyContext {
   visitedSourceObjects?: unknown[];
+}
+
+export function wrapPropObjectApply<
+  TTarget extends { [P in keyof TTarget & keyof TSource]?: TTarget[P] },
+  TSource extends { [P in keyof TSource]?: TSource[P] },
+  TTargetItem extends TTarget[TProp],
+  TSourceItem extends TSource[TProp],
+  TProp extends keyof TTarget & keyof TSource,
+>(applyFn: ApplyObjectFn<TTargetItem, TSourceItem>): ApplyObjectPropFn<TTarget, TSource, TProp> {
+  return ((targetObj: TTarget, sourceObj: TSource, propName: TProp, context?: ApplyContext) => {
+    let appliedChanges = false;
+    const sourceValue = sourceObj[propName] as TSourceItem | undefined;
+    if (sourceValue == null) {
+      if (sourceValue === null) {
+        throw new Error("Null source value is not supported");
+      } else {
+        return appliedChanges;
+      }
+    }
+
+    let targetValue = targetObj[propName] as TTargetItem | undefined;
+    if (targetValue == null) {
+      targetValue = {} as TTargetItem;
+      targetObj[propName] = targetValue as TTarget[TProp];
+      appliedChanges = true;
+    }
+
+    if (applyFn(targetValue, sourceValue, context)) {
+      appliedChanges = true;
+    }
+
+    return appliedChanges;
+  }) as ApplyObjectPropFn<TTarget, TSource, TProp>;
 }
 
 export function createKeyedArrayPropApplyFn<

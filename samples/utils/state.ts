@@ -7,14 +7,14 @@ import { isSubscriptionId, isTenantId } from "armpit";
 // specific needs. Feel free to use this as inspiration though.
 
 interface MyEnv {
-  code: string,
-  subscriptionId: string,
-  tenantId: string,
-  defaultLocation?: string,
+  code: string;
+  subscriptionId: string;
+  tenantId: string;
+  defaultLocation?: string | null;
 }
 
 interface MyConfig {
-  envs: MyEnv[]
+  envs: MyEnv[];
 }
 
 async function writeConfigTemplate(configPath: string) {
@@ -24,9 +24,10 @@ async function writeConfigTemplate(configPath: string) {
         code: "samples",
         subscriptionId: "<your-subscription-id>",
         tenantId: "<your-azure-tenant-id>",
-      }
-    ]
-  }
+        defaultLocation: null,
+      },
+    ],
+  };
   await fs.writeFile(configPath, JSON.stringify(configTemplate, null, 2));
 }
 
@@ -35,7 +36,7 @@ function getDataFolderPath() {
 }
 
 function isEntityNotFoundError(err: unknown): err is Error & { code: "ENOENT" } {
-   return err instanceof Error && (err as any).code === "ENOENT";
+  return err instanceof Error && (err as any).code === "ENOENT";
 }
 
 function findArgScriptName(): string | null {
@@ -118,7 +119,7 @@ export async function loadState<TState>(name?: string) {
   } catch (err) {
     if (err instanceof Error && isEntityNotFoundError(err)) {
       console.log(`Creating new state file: ${stateFilePath}`);
-      state = { } as TState;
+      state = {} as TState;
       await fs.writeFile(stateFilePath, JSON.stringify(state, null, 2));
     } else {
       throw err;
