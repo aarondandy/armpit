@@ -2,7 +2,6 @@ import type {
   ContainerAppsAPIClientOptionalParams,
   ManagedEnvironment,
   ContainerApp,
-  ManagedServiceIdentity,
   KnownManagedServiceIdentityType,
   Configuration,
   Ingress,
@@ -15,7 +14,6 @@ import type {
 import { ContainerAppsAPIClient } from "@azure/arm-appcontainers";
 import { mergeAbortSignals } from "./tsUtils.js";
 import {
-  applyObjectKeyProperties,
   applySourceToTargetObjectWithTemplate,
   applySourceToTargetObject,
   applyUnorderedValueArrayProp,
@@ -25,7 +23,12 @@ import {
   shallowMergeDefinedValues,
   type ApplyContext,
 } from "./optionsUtils.js";
-import { type SubscriptionId, extractSubscriptionFromId, locationNameOrCodeEquals } from "./azureUtils.js";
+import {
+  type SubscriptionId,
+  applyManagedServiceIdentity,
+  extractSubscriptionFromId,
+  locationNameOrCodeEquals,
+} from "./azureUtils.js";
 import { ManagementClientFactory, handleGet } from "./azureSdkUtils.js";
 import { AzCliInvoker, AzCliOptions, AzCliTemplateFn } from "./azCliInvoker.js";
 
@@ -45,47 +48,11 @@ function splitContainerAppOptionsAndDescriptor<T extends ContainerAppToolsOption
 }
 
 type UserAssignedIdentityDescriptor = object;
-
-interface ManagedServiceIdentityDescriptor extends Pick<ManagedServiceIdentity, "type"> {
+interface ManagedServiceIdentityDescriptor {
   type: `${KnownManagedServiceIdentityType}`;
   userAssignedIdentities?: {
     [propertyName: string]: UserAssignedIdentityDescriptor;
   };
-}
-
-function applyManagedServiceIdentity(
-  target: ManagedServiceIdentity,
-  source: ManagedServiceIdentityDescriptor,
-  context?: ApplyContext,
-) {
-  let appliedChanges = false;
-  const { userAssignedIdentities, ...rest } = source;
-
-  if (userAssignedIdentities == null) {
-    if (userAssignedIdentities === null && target.userAssignedIdentities != null) {
-      delete target.userAssignedIdentities;
-    }
-  } else {
-    target.userAssignedIdentities ??= {};
-    if (
-      applyObjectKeyProperties(
-        target.userAssignedIdentities,
-        userAssignedIdentities ?? {},
-        (k, t, s) => {
-          t[k] = s[k] ?? {};
-        },
-        true,
-      )
-    ) {
-      appliedChanges = true;
-    }
-  }
-
-  if (applySourceToTargetObject(target, rest, context)) {
-    appliedChanges = true;
-  }
-
-  return appliedChanges;
 }
 
 interface ManagedEnvironmentDescriptor

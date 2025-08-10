@@ -2,6 +2,7 @@ import { validate as uuidValidate } from "uuid";
 import type { Resource } from "@azure/arm-resources";
 import type { Subscription } from "@azure/arm-resources-subscriptions";
 import { isStringValueArrayEqual } from "./tsUtils.js";
+import { ApplyContext, applyObjectKeyProperties, applySourceToTargetObject } from "./optionsUtils.js";
 
 export type Account = Pick<Subscription, "id" | "managedByTenants" | "state" | "tenantId"> & {
   readonly cloudName?: "AzureCloud" | (string & {});
@@ -142,4 +143,38 @@ export function idsEquals(
 
 export function locationNameOrCodeEquals(a: string, b: string) {
   return a.replace(/\s/g, "").localeCompare(b.replace(/\s/g, ""), undefined, { sensitivity: "base" }) === 0;
+}
+
+export function applyManagedServiceIdentity<
+  TTarget extends { type?: string; userAssignedIdentities?: { [propertyName: string]: object } },
+  TSource extends { type?: string; userAssignedIdentities?: { [propertyName: string]: object } },
+>(target: TTarget, source: TSource, context?: ApplyContext) {
+  let appliedChanges = false;
+  const { userAssignedIdentities, ...rest } = source;
+
+  if (userAssignedIdentities == null) {
+    if (userAssignedIdentities === null && target.userAssignedIdentities != null) {
+      delete target.userAssignedIdentities;
+    }
+  } else {
+    target.userAssignedIdentities ??= {};
+    if (
+      applyObjectKeyProperties(
+        target.userAssignedIdentities,
+        userAssignedIdentities,
+        (k, t, s) => {
+          t[k] = s[k] ?? {};
+        },
+        true,
+      )
+    ) {
+      appliedChanges = true;
+    }
+  }
+
+  if (applySourceToTargetObject(target, rest, context)) {
+    appliedChanges = true;
+  }
+
+  return appliedChanges;
 }

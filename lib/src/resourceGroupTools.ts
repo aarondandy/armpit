@@ -20,6 +20,7 @@ import type { ArmpitCredentialOptions, ArmpitCliCredentialFactory } from "./armp
 import { AzGroupInterface } from "./interface.js";
 import { NetworkTools } from "./networkTools.js";
 import { ContainerAppTools } from "./containerAppTools.js";
+import { ComputeTools } from "./computeTools.js";
 
 interface GroupToolsBaseOptions {
   subscriptionId?: SubscriptionId;
@@ -181,6 +182,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
     return Object.assign(cliResult, {
       network: new NetworkTools(this.#dependencies, generalToolOptions),
       containerApp: new ContainerAppTools(this.#dependencies, generalToolOptions),
+      compute: new ComputeTools(this.#dependencies, generalToolOptions),
       getCredential: (options?: ArmpitCredentialOptions) => {
         if (subscriptionId) {
           options = { subscription: subscriptionId, ...options };

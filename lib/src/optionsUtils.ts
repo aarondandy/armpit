@@ -226,9 +226,11 @@ export function wrapPropObjectApply<
   TTarget extends { [P in keyof TTarget & keyof TSource]?: TTarget[P] },
   TSource extends { [P in keyof TSource]?: TSource[P] },
   TTargetItem extends TTarget[TProp],
-  TSourceItem extends TSource[TProp],
+  TSourceItem extends TSource[TProp] | undefined,
   TProp extends keyof TTarget & keyof TSource,
->(applyFn: ApplyObjectFn<TTargetItem, TSourceItem>): ApplyObjectPropFn<TTarget, TSource, TProp> {
+>(
+  applyFn: ApplyObjectFn<NonNullable<TTargetItem>, NonNullable<TSourceItem>>,
+): ApplyObjectPropFn<TTarget, TSource, TProp> {
   return ((targetObj: TTarget, sourceObj: TSource, propName: TProp, context?: ApplyContext) => {
     let appliedChanges = false;
     const sourceValue = sourceObj[propName] as TSourceItem | undefined;
@@ -247,7 +249,7 @@ export function wrapPropObjectApply<
       appliedChanges = true;
     }
 
-    if (applyFn(targetValue, sourceValue, context)) {
+    if (applyFn(targetValue as NonNullable<TTargetItem>, sourceValue, context)) {
       appliedChanges = true;
     }
 
@@ -405,7 +407,13 @@ export function applySourceToTargetObjectWithTemplate<
           hasBeenUpdated = true;
         }
       } else if (Array.isArray(sourceValue)) {
-        throw new Error("Array assignment not supported");
+        if (target[sourcePropName] == null) {
+          target[sourcePropName] = [] as TTarget[keyof TSource];
+        }
+
+        if (applyOrderedArray(target[sourcePropName] as unknown[], sourceValue)) {
+          hasBeenUpdated = true;
+        }
       } else if (typeof sourceValue === "object") {
         if (target[sourcePropName] == null) {
           target[sourcePropName] = {} as TTarget[keyof TSource];
@@ -441,6 +449,53 @@ export function applySourceToTargetObjectWithTemplate<
   return hasBeenUpdated;
 }
 
+function defaultEqualsTest(a: unknown, b: unknown): boolean {
+  if (a === b) {
+    return true;
+  }
+
+  if (a == null || b == null) {
+    return false;
+  }
+
+  if (typeof a === "object" && typeof b === "object") {
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+
+  return false;
+}
+
+export function applyUnorderedArray<TValue>(
+  targetArray: TValue[],
+  sourceArray: TValue[],
+  test?: (a: TValue, b: TValue) => boolean,
+) {
+  let appliedChanges = false;
+  test ??= defaultEqualsTest;
+
+  const unmatchedSourceItems = [...sourceArray];
+
+  for (let targetIndex = 0; targetIndex < targetArray.length; ) {
+    const targetItem = targetArray[targetIndex];
+    const searchIndex = unmatchedSourceItems.findIndex(sourceItem => test(targetItem, sourceItem));
+    if (searchIndex >= 0) {
+      // TODO: handle matches and `appliedChanges = true;` if required
+      unmatchedSourceItems.splice(searchIndex, 1);
+      targetIndex++;
+    } else {
+      targetArray.splice(targetIndex, 1);
+      appliedChanges = true;
+    }
+  }
+
+  if (unmatchedSourceItems.length > 0) {
+    targetArray.push(...unmatchedSourceItems);
+    appliedChanges = true;
+  }
+
+  return appliedChanges;
+}
+
 export function applyUnorderedValueArrayProp<
   TValue extends string | number,
   TTarget extends { [P in TProp]?: TValue[] },
@@ -458,20 +513,80 @@ export function applyUnorderedValueArrayProp<
   if (targetValues == null) {
     targetValues = [];
     target[propName] = targetValues as TTarget[TProp];
+    appliedChanges = true;
   }
 
-  const toRemove = targetValues.filter(t => !sourceValues.includes(t));
-  if (toRemove.length > 0) {
-    for (const r of toRemove) {
-      const i = targetValues.indexOf(r);
-      targetValues.splice(i, 1);
-      appliedChanges = true;
+  if (applyUnorderedArray(targetValues, sourceValues)) {
+    appliedChanges = true;
+  }
+
+  return appliedChanges;
+}
+
+export function applyOrderedArray<TValue>(
+  targetArray: TValue[],
+  sourceArray: TValue[],
+  test?: (a: TValue, b: TValue) => boolean,
+) {
+  let appliedChanges = false;
+  test ??= defaultEqualsTest;
+
+  for (let sourceIndex = 0; sourceIndex < sourceArray.length; sourceIndex++) {
+    const sourceItem = sourceArray[sourceIndex];
+    const searchIndex = targetArray.findIndex(
+      (targetItem, targetIndex) => targetIndex >= sourceIndex && test(targetItem, sourceItem),
+    );
+    if (searchIndex >= 0) {
+      const searchItem = targetArray[searchIndex];
+      if (searchIndex === sourceIndex) {
+        // TODO: handle matches and `appliedChanges = true;` if required
+      } else {
+        // Swap items to preserve existing values or objects
+        targetArray[searchIndex] = targetArray[sourceIndex];
+        targetArray[sourceIndex] = searchItem;
+        appliedChanges = true;
+      }
+    } else {
+      if (sourceIndex === targetArray.length) {
+        targetArray.push(sourceItem);
+        appliedChanges = true;
+      } else if (sourceIndex > targetArray.length) {
+        throw new Error("Unexpected index");
+      } else {
+        targetArray.splice(sourceIndex, 0, sourceItem);
+      }
     }
   }
 
-  const toAdd = sourceValues.filter(s => !targetValues.includes(s));
-  if (toAdd.length > 0) {
-    targetValues.push(...toAdd);
+  if (targetArray.length > sourceArray.length) {
+    targetArray.splice(sourceArray.length, targetArray.length - sourceArray.length);
+    appliedChanges = true;
+  }
+
+  return appliedChanges;
+}
+
+export function applyOrderedValueArrayProp<
+  TValue extends string | number,
+  TTarget extends { [P in TProp]?: TValue[] },
+  TSource extends { [P in TProp]?: TValue[] },
+  TProp extends keyof TSource,
+>(target: TTarget, source: TSource, propName: TProp) {
+  let appliedChanges = false;
+
+  const sourceValues = source[propName] as TValue[] | undefined;
+  if (sourceValues == null) {
+    return appliedChanges;
+  }
+
+  let targetValues = target[propName] as TValue[] | undefined;
+  if (targetValues == null) {
+    targetValues = [];
+    target[propName] = targetValues as TTarget[TProp];
+    appliedChanges = true;
+  }
+
+  if (applyOrderedArray(targetValues, sourceValues)) {
     appliedChanges = true;
   }
 
