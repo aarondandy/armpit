@@ -4,6 +4,7 @@ import { ResourceGroupTools } from "./resourceGroupTools.js";
 import { NetworkTools } from "./networkTools.js";
 import { ContainerAppTools } from "./containerAppTools.js";
 import { AzCliInvoker } from "./azCliInvoker.js";
+import { ComputeTools } from "./computeTools.js";
 
 export interface AzGlobal extends ArmpitCredentialProvider {
   readonly group: ResourceGroupTools;
@@ -21,6 +22,7 @@ export interface AzGroupBound extends AzLocationBound, ArmpitCredentialProvider 
   readonly subscriptionId: string | null;
   readonly network: NetworkTools;
   readonly containerApp: ContainerAppTools;
+  readonly compute: ComputeTools;
 }
 
 export interface AzGroupInterface extends AzGroupBound, AzCliInvoker {}
