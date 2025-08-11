@@ -1,5 +1,5 @@
 import path from "node:path";
-import { az, NameHash, type VirtualMachineCreateResult } from "armpit";
+import { az, NameHash, helpers, type VirtualMachineCreateResult } from "armpit";
 import { loadMyEnvironment, loadState, saveState } from "./utils/state.js";
 import type { NetworkInterface } from "@azure/arm-network";
 import type { Disk, VirtualMachineExtension, RunCommandResult } from "@azure/arm-compute";
@@ -93,12 +93,10 @@ const pip = rg.network.pipUpsert(`pip-${state.serverName}`, {
 });
 pip.then(pip => console.log(`[vm] public ip ${pip.dnsSettings?.fqdn} (${pip.ipAddress})`));
 
-const nic = (async () => {
-  const nicAsgNames = Object.entries(await asgs).flatMap(x => (["ssh", "factorio"].includes(x[0]) ? [x[1].name] : []));
-  return rg<NetworkInterface>`network nic create -n vm-${state.serverName}-nic
+const nic = (async () => rg<NetworkInterface>`network nic create -n vm-${state.serverName}-nic
   --subnet ${(await subnetVms).id} --public-ip-address ${(await pip).name}
-  --network-security-group ${(await nsg).name} --asgs ${nicAsgNames}`;
-})();
+  --network-security-group ${(await nsg).name}
+  --asgs ${helpers.pickValues(await asgs, "ssh", "factorio").map(a => a.name)}`)();
 nic.then(nic => console.log(`[vm] nic ${nic.ipConfigurations?.[0]?.privateIPAddress}`));
 
 const osDisk = rg<Disk>`disk create -n vm-${state.serverName}-os

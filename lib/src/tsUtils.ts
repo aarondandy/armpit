@@ -206,3 +206,13 @@ export function isPrimitiveValue(value: unknown): value is bigint | boolean | nu
       return false;
   }
 }
+
+export function filterProperties<TObj extends object, TKey extends keyof TObj>(object: TObj, ...keys: readonly TKey[]) {
+  return Object.fromEntries(Object.entries(object).filter(pair => keys.includes(pair[0] as TKey))) as {
+    [P in TKey]: TObj[P];
+  };
+}
+
+export function pickValues<TObj extends object, TKey extends keyof TObj>(object: TObj, ...keys: readonly TKey[]) {
+  return keys.map(k => object[k]);
+}

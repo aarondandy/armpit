@@ -13,6 +13,7 @@ import { AccountTools } from "./accountTools.js";
 import { ResourceGroupTools } from "./resourceGroupTools.js";
 import { AzGlobalInterface } from "./interface.js";
 import { ArmpitCliCredentialFactory } from "./armpitCredential.js";
+import { filterProperties, pickValues } from "./tsUtils.js";
 
 export type { Account, ResourceSummary, VirtualMachineCreateResult };
 
@@ -46,5 +47,10 @@ const az = (function (): AzGlobalInterface {
   });
 })();
 
+const helpers = {
+  filterProperties,
+  pickValues,
+} as const;
+
 export default az;
-export { az, isSubscriptionId, isTenantId, NameHash, ExistingGroupLocationConflictError, GroupNotEmptyError };
+export { az, helpers, isSubscriptionId, isTenantId, NameHash, ExistingGroupLocationConflictError, GroupNotEmptyError };
