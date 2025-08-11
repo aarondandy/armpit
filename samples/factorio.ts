@@ -2,7 +2,7 @@ import path from "node:path";
 import { az, NameHash, type VirtualMachineCreateResult } from "armpit";
 import { loadMyEnvironment, loadState, saveState } from "./utils/state.js";
 import type { NetworkInterface } from "@azure/arm-network";
-import type { Disk, VirtualMachine, VirtualMachineExtension, RunCommandResult } from "@azure/arm-compute";
+import type { Disk, VirtualMachineExtension, RunCommandResult } from "@azure/arm-compute";
 
 // --------------------------
 // Environment & Subscription
@@ -27,34 +27,35 @@ const resourceHash = new NameHash(targetEnvironment.subscriptionId).concat(rg.na
 // Network
 // -------
 
-const asgs = {
-  ssh: rg.network.asgUpsert("asg-ssh"),
-  factorio: rg.network.asgUpsert("asg-factorio"),
-};
-
-const nsg = rg.network.nsgUpsert(`nsg-videogames-${rg.location}`, {
-  securityRules: [
-    {
-      name: "FactoryMustGrow",
-      direction: "Inbound",
-      priority: 200,
-      access: "Allow",
-      protocol: "Udp",
-      destinationApplicationSecurityGroups: [await asgs.factorio],
-      destinationPortRange: "34197",
-    },
-    {
-      name: "ManageFromWorkstation",
-      direction: "Inbound",
-      priority: 1000,
-      access: "Allow",
-      protocol: "Tcp",
-      sourceAddressPrefix: await myIp,
-      destinationApplicationSecurityGroups: [await asgs.ssh],
-      destinationPortRange: "22",
-    },
-  ],
+const asgs = rg.network.asgMultiUpsert({
+  ssh: "asg-ssh",
+  factorio: "asg-factorio",
 });
+
+const nsg = (async () =>
+  rg.network.nsgUpsert(`nsg-videogames-${rg.location}`, {
+    securityRules: [
+      {
+        name: "FactoryMustGrow",
+        direction: "Inbound",
+        priority: 200,
+        access: "Allow",
+        protocol: "Udp",
+        destinationApplicationSecurityGroups: [(await asgs).factorio],
+        destinationPortRange: "34197",
+      },
+      {
+        name: "ManageFromWorkstation",
+        direction: "Inbound",
+        priority: 1000,
+        access: "Allow",
+        protocol: "Tcp",
+        sourceAddressPrefix: await myIp,
+        destinationApplicationSecurityGroups: [(await asgs).ssh],
+        destinationPortRange: "22",
+      },
+    ],
+  }))();
 nsg.then(nsg => console.log(`[net] nsg ${nsg.name}`));
 
 const vnet = (async () =>
@@ -93,10 +94,10 @@ const pip = rg.network.pipUpsert(`pip-${state.serverName}`, {
 pip.then(pip => console.log(`[vm] public ip ${pip.dnsSettings?.fqdn} (${pip.ipAddress})`));
 
 const nic = (async () => {
-  const asgNames = (await Promise.all([asgs.ssh, asgs.factorio])).map(a => a.name);
+  const nicAsgNames = Object.entries(await asgs).flatMap(x => (["ssh", "factorio"].includes(x[0]) ? [x[1].name] : []));
   return rg<NetworkInterface>`network nic create -n vm-${state.serverName}-nic
-    --subnet ${(await subnetVms).id} --public-ip-address ${(await pip).name}
-    --network-security-group ${(await nsg).name} --asgs ${asgNames}`;
+  --subnet ${(await subnetVms).id} --public-ip-address ${(await pip).name}
+  --network-security-group ${(await nsg).name} --asgs ${nicAsgNames}`;
 })();
 nic.then(nic => console.log(`[vm] nic ${nic.ipConfigurations?.[0]?.privateIPAddress}`));
 

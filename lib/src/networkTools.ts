@@ -634,6 +634,18 @@ export class NetworkTools {
     return this.#getLaxInvokerFn(options)<NetworkSecurityGroup>`network asg show ${args}`;
   }
 
+  async asgMultiUpsert<TDescriptor extends { [key: string]: string }>(
+    descriptor: TDescriptor,
+    options?: NetworkToolsOptions,
+  ): Promise<{ [K in keyof TDescriptor]: ApplicationSecurityGroup }> {
+    const promises = Object.entries(descriptor).map(async ([key, name]: [keyof TDescriptor, string]) => {
+      const asg = await this.asgUpsert(name, options);
+      return [key, asg] as [keyof TDescriptor, ApplicationSecurityGroup];
+    });
+    const results = await Promise.all(promises);
+    return Object.fromEntries(results) as { [K in keyof TDescriptor]: ApplicationSecurityGroup };
+  }
+
   async asgUpsert(name: string, options?: NetworkToolsOptions): Promise<ApplicationSecurityGroup> {
     const opContext = this.#buildMergedOptions(options);
 
