@@ -1,4 +1,10 @@
-import { type Account, type ResourceSummary, isSubscriptionId, isTenantId } from "./azureUtils.js";
+import {
+  type Account,
+  type ResourceSummary,
+  type VirtualMachineCreateResult,
+  isSubscriptionId,
+  isTenantId,
+} from "./azureUtils.js";
 import { NameHash } from "./nameHash.js";
 import { ExistingGroupLocationConflictError, GroupNotEmptyError } from "./errors.js";
 import { AzCliExecaInvoker } from "./azCliExecaInvoker.js";
@@ -8,7 +14,7 @@ import { ResourceGroupTools } from "./resourceGroupTools.js";
 import { AzGlobalInterface } from "./interface.js";
 import { ArmpitCliCredentialFactory } from "./armpitCredential.js";
 
-export type { Account, ResourceSummary };
+export type { Account, ResourceSummary, VirtualMachineCreateResult };
 
 const az = (function (): AzGlobalInterface {
   const abortController = new AbortController();

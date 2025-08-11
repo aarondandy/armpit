@@ -1,5 +1,5 @@
 import path from "node:path";
-import { az, NameHash } from "armpit";
+import { az, NameHash, type VirtualMachineCreateResult } from "armpit";
 import { loadMyEnvironment, loadState, saveState } from "./utils/state.js";
 import type { NetworkInterface } from "@azure/arm-network";
 import type { Disk, VirtualMachine, VirtualMachineExtension, RunCommandResult } from "@azure/arm-compute";
@@ -92,47 +92,47 @@ const pip = rg.network.pipUpsert(`pip-${state.serverName}`, {
 });
 pip.then(pip => console.log(`[vm] public ip ${pip.dnsSettings?.fqdn} (${pip.ipAddress})`));
 
-const nic = (async () => rg<NetworkInterface>`network nic create -n nic-${state.serverName}
-  --subnet ${(await subnetVms).id} --public-ip-address ${(await pip).name}
-  --network-security-group ${(await nsg).name} --asgs ${(await asgs.ssh).name} ${(await asgs.factorio).name}`)();
+const nic = (async () => {
+  const asgNames = (await Promise.all([asgs.ssh, asgs.factorio])).map(a => a.name);
+  return rg<NetworkInterface>`network nic create -n vm-${state.serverName}-nic
+    --subnet ${(await subnetVms).id} --public-ip-address ${(await pip).name}
+    --network-security-group ${(await nsg).name} --asgs ${asgNames}`;
+})();
 nic.then(nic => console.log(`[vm] nic ${nic.ipConfigurations?.[0]?.privateIPAddress}`));
 
-const osDisk = rg<Disk>`disk create -n os-${state.serverName}
+const osDisk = rg<Disk>`disk create -n vm-${state.serverName}-os
   --hyper-v-generation V2
   --os-type Linux --image-reference Canonical:ubuntu-24_04-lts:server:latest
   --sku Premium_LRS --size-gb 32`;
 osDisk.then(d => console.log(`[vm] disk ${d.name}`));
 
-let vm = (async () => {
+const vm = await (async () => {
   const name = `vm-${state.serverName}`;
-  await rg`vm create
+  const vmResult = await rg<VirtualMachineCreateResult>`vm create
     -n ${name} --computer-name ${state.serverName}
     --size Standard_D2als_v6 --nics ${(await nic).id}
     --attach-os-disk ${(await osDisk).name} --os-type linux
     --assign-identity [system]`;
-  return await rg<VirtualMachine>`vm show -n ${name}`;
-})();
-vm.then(vm => console.log(`[vm] server ${vm.name}`));
-
-const vmAuth = (async () => {
-  await az`role assignment create --assignee ${myUser.userPrincipalName} --role ${"Virtual Machine Administrator Login"} --scope ${(await vm).id}`;
-  console.log(`[vm] admin ${myUser.userPrincipalName} added to ${(await vm).name}`);
-})();
-const vmExtensions = (async () => {
-  await rg<VirtualMachineExtension>`vm extension set --vm-name ${(await vm).name} --name AADSSHLoginForLinux --publisher Microsoft.Azure.ActiveDirectory`;
-  console.log("[vm] extension AADSSHLoginForLinux installed");
-})();
-const vmConfig = (async () => {
-  const scriptPath = path.join(import.meta.dirname, "factorio.init.sh");
-  const result =
-    await rg<RunCommandResult>`vm run-command invoke --command-id RunShellScript -n ${(await vm).name} --scripts ${"@" + scriptPath}`;
-  console.log(`[vm] init script status: ${result.value?.map(s => s.displayStatus)}`);
+  console.log(`[vm] server ${name}`);
+  return { name, ...vmResult };
 })();
 
-await Promise.all([vmAuth, vmExtensions, vmConfig]);
+await Promise.all([
+  (async () => {
+    await rg<VirtualMachineExtension>`vm extension set --vm-name ${vm.name} --name AADSSHLoginForLinux --publisher Microsoft.Azure.ActiveDirectory`;
+    await az`role assignment create --assignee ${myUser.userPrincipalName} --role ${"Virtual Machine Administrator Login"} --scope ${vm.id}`;
+    console.log(`[vm] user ${myUser.userPrincipalName} can SSH into ${vm.name}`);
+  })(),
+  (async () => {
+    const scriptPath = path.join(import.meta.dirname, "factorio.init.sh");
+    const result =
+      await rg<RunCommandResult>`vm run-command invoke --command-id RunShellScript -n ${vm.name} --scripts ${"@" + scriptPath}`;
+    console.log(`[vm] init script status: ${result.value?.map(s => s.displayStatus)}`);
+  })(),
+]);
 
 console.log(`
 The server is ready and the factory must grow.
-Connect: ${(await pip).dnsSettings?.fqdn} (${(await pip).ipAddress})
-Admin: az ssh vm -n ${(await vm).name} -g ${rg.name}
+Connect: ${vm.fqdns} (${vm.publicIpAddress})
+Admin: az ssh vm -n ${vm.name} -g ${vm.resourceGroup}
 `);

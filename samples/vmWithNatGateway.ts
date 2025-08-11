@@ -66,7 +66,7 @@ const vmIp = rg.network.pipUpsert(`pip-jump-${rg.location}`, {
 vmIp.then(x => console.log(`[vm] ip ${x.ipAddress}`));
 
 const nic = (async () =>
-  rg.network.nicUpsert(`nic-jump-${rg.location}`, {
+  rg.network.nicUpsert(`vm-jump${rg.location}${resourceHash}-nic`, {
     nicType: "Standard",
     networkSecurityGroup: await nsg,
     ipConfigurations: [
@@ -83,4 +83,29 @@ const nic = (async () =>
   }))();
 nic.then(x => console.log(`[vm] nic created ${x.name}`));
 
-await nic;
+const vm = await rg.compute.vmUpsert(`vm-jump${rg.location}${resourceHash}`, {
+  hardwareProfile: { vmSize: "Standard_B2ls_v2" },
+  networkProfile: { networkInterfaces: [await nic] },
+  osProfile: {
+    computerName: `jump${rg.location}`,
+    adminUsername: "human",
+    adminPassword: "Passw0rd",
+    windowsConfiguration: { patchSettings: { patchMode: "AutomaticByPlatform" } },
+  },
+  storageProfile: {
+    imageReference: {
+      publisher: "MicrosoftWindowsServer",
+      offer: "WindowsServer",
+      sku: "2025-datacenter-azure-edition-smalldisk",
+      version: "latest",
+    },
+    osDisk: { name: `vm-jump${rg.location}${resourceHash}-os`, createOption: "FromImage", diskSizeGB: 32 },
+  },
+});
+console.log(`[vm] vm created ${vm.name}`);
+
+console.log(`
+VM and NAT Gateway are ready.
+VM IP: ${(await vmIp).ipAddress}
+Egress: ${(await natIp).ipAddress}
+`);

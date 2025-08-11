@@ -52,17 +52,18 @@ export function hasLocation<T>(resource?: T): resource is T & { location: string
   return resource != null && typeof (resource as any).location === "string";
 }
 
-// type VirtualMachineCreateResult = {
-//   fqdns: string,
-//   id: string,
-//   location: string,
-//   macAddress: string,
-//   powerState: string,
-//   privateIpAddress: string,
-//   publicIpAddress: string,
-//   resourceGroup: string,
-//   zones: string
-// };
+export interface VirtualMachineCreateResult {
+  id: string;
+  resourceGroup: string;
+  powerState?: string;
+  publicIpAddress?: string;
+  fqdns?: string;
+  privateIpAddress?: string;
+  macAddress?: string;
+  location?: string;
+  identity?: { type?: string; userAssignedIdentities?: { [propertyName: string]: object } };
+  zones?: string;
+}
 
 export type ResourceId = string;
 
