@@ -30,8 +30,8 @@ const vnet = rg.network.vnetUpsert(`vnet-sample-${rg.location}`, {
       addressPrefix: "10.10.20.0/24",
     },
     {
-      name: "app",
-      addressPrefix: "10.10.30.0/24",
+      name: "web",
+      addressPrefix: "10.10.31.0/24",
       delegations: "Microsoft.App/environments",
     },
   ],
@@ -104,43 +104,31 @@ runOnDb(async pool => {
 })();
 
 // --------
-// Services
+// Web Apps
 // --------
 
-const containerAppEnv = (async () =>
-  rg.containerApp.envUpsert(`appenv-sample${resourceHash}-${rg.location}`, {
-    vnetConfiguration: { infrastructureSubnetId: (await getSubnet("app")).id },
-    workloadProfiles: [{ name: "Consumption", workloadProfileType: "Consumption" }],
-  }))();
-containerAppEnv.then(appEnv => console.log(`[app] app environment ${appEnv.name} ready via ${appEnv.staticIp}`));
+const plan = rg.appService.planUpsert(`asp-sample${resourceHash}-${rg.location}`, {
+  kind: "linux",
+  sku: { name: "P0v3" },
+});
+plan.then(p => console.log(`[app] plan ${p.name} ready`));
 
 const app = (async () => {
   const sqlConnectionString = `Server=${(await dbServer).name}.database.windows.net;Database=${(await db).name};Authentication=Active Directory Managed Identity;`;
 
-  const app = await rg.containerApp.appUpsert(`app-sample${resourceHash}`, {
-    environmentId: (await containerAppEnv).id,
-    workloadProfileName: "Consumption",
-    template: {
-      containers: [
-        {
-          name: "numbers-sample",
-          image: "aarondandy/numbers:latest",
-          env: [
-            { name: "ConnectionStrings__MyDatabase", value: sqlConnectionString },
-            { name: "FOO", value: "BAR" },
-          ],
-        },
+  const app = await rg.appService.webAppUpsert(`app-sample${resourceHash}-${rg.location}`, {
+    serverFarmId: (await plan).id,
+    kind: "app,linux",
+    identity: { type: "SystemAssigned" },
+    siteConfig: {
+      appSettings: [
+        { name: "WEBSITE_VNET_ROUTE_ALL", value: "1" },
+        { name: "ConnectionStrings__MyDatabase", value: sqlConnectionString },
+        { name: "FOO", value: "BAR" },
       ],
     },
-    configuration: {
-      ingress: {
-        external: true,
-        targetPort: 8080,
-      },
-    },
-    identity: { type: "SystemAssigned" },
   });
-  console.log(`[app] ${app.name} ready`);
+  console.log(`[app] app ${app.name} ready`);
 
   // permission app to DB
   await runOnDb(async pool => {
@@ -158,4 +146,5 @@ const app = (async () => {
   return app;
 })();
 
-console.log(`[app] app revision ready ${"https://" + (await app).configuration?.ingress?.fqdn}`);
+await app;
+console.log("done");

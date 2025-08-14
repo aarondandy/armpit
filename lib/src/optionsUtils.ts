@@ -141,19 +141,19 @@ export function applyArrayIdDescriptors<T extends { id?: string }>(
   );
 }
 
-export function applyObjectKeyProperties<TTarget extends TSource, TSource extends object>(
+export function applyObjectKeyProperties<TTarget extends object, TSource extends object>(
   target: TTarget,
   source: TSource,
   onAdd?: (key: keyof TSource, target: TTarget, source: TSource) => boolean | void,
-  onRemove?: boolean | ((key: keyof TSource, target: TTarget) => boolean | void),
-  onMatch?: (key: keyof TSource, target: TTarget, source: TSource) => boolean | void,
+  onRemove?: boolean | ((key: keyof TTarget, target: TTarget) => boolean | void),
+  onMatch?: (key: keyof TSource & keyof TTarget, target: TTarget, source: TSource) => boolean | void,
 ) {
   let updated = false;
   const sourceKeys = Object.keys(source) as (keyof TSource)[];
-  const targetKeys = Object.keys(target) as (keyof TSource)[];
+  const targetKeys = Object.keys(target) as (keyof TTarget)[];
 
   if (onRemove != null && onRemove !== false) {
-    const removeFn: (key: keyof TSource) => void =
+    const removeFn: (key: keyof TTarget) => void =
       onRemove === true
         ? k => {
             delete target[k];
@@ -164,27 +164,19 @@ export function applyObjectKeyProperties<TTarget extends TSource, TSource extend
               updated = true;
             }
           };
-    targetKeys.filter(k => !sourceKeys.includes(k)).forEach(removeFn);
+    targetKeys.filter(k => !sourceKeys.includes(k as unknown as keyof TSource)).forEach(removeFn);
   }
 
-  if (onAdd != null) {
-    sourceKeys
-      .filter(k => !targetKeys.includes(k))
-      .forEach(k => {
-        if (onAdd(k, target, source) !== false) {
-          updated = true;
-        }
-      });
-  }
-
-  if (onMatch != null) {
-    sourceKeys
-      .filter(k => targetKeys.includes(k))
-      .forEach(k => {
-        if (onMatch(k, target, source) !== false) {
-          updated = true;
-        }
-      });
+  for (const sourceKey of sourceKeys) {
+    if (targetKeys.includes(sourceKey as unknown as keyof TTarget)) {
+      if (onMatch && onMatch(sourceKey as keyof TTarget & keyof TSource, target, source) !== false) {
+        updated = true;
+      }
+    } else {
+      if (onAdd && onAdd(sourceKey, target, source) !== false) {
+        updated = true;
+      }
+    }
   }
 
   return updated;
