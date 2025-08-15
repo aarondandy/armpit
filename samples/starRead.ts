@@ -1,15 +1,10 @@
 import { type RoleAssignment, type RoleDefinition } from "@azure/arm-authorization";
 import az from "armpit";
 
-import { inspect } from "util";
-
 // This script looks for role assignments which may unintentionally give */read access based on
 // https://www.token.security/blog/azures-role-roulette-how-over-privileged-roles-and-api-vulnerabilities-expose-enterprise-networks
 
-const account = (await az.account.show()) ?? (await az.account.login());
-if (account == null) {
-  throw new Error("Login failure");
-}
+await az.account.ensureActiveAccount();
 
 const fullReadAction = "*/read";
 const allRoles = await az<RoleDefinition[]>`role definition list`;
@@ -18,9 +13,6 @@ const implicitReadRoles = fullReadRoles.filter(r => !(r.roleType === "BuiltInRol
 const implicitReadRoleDefinitionIds = implicitReadRoles.map(r => r.id);
 
 console.log(`The following role definitions have '${fullReadAction}' access:`);
-
-console.log(inspect(implicitReadRoles, { depth: null, colors: true }));
-
 console.log(implicitReadRoles.map(r => r.roleName));
 
 const assignments = await az<RoleAssignment[]>`role assignment list --all`;
