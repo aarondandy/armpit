@@ -32,7 +32,7 @@ const vnet = rg.network.vnetUpsert(`vnet-sample-${rg.location}`, {
     {
       name: "web",
       addressPrefix: "10.10.31.0/24",
-      delegations: "Microsoft.App/environments",
+      delegations: "Microsoft.Web/serverFarms",
     },
   ],
 });
@@ -109,6 +109,7 @@ runOnDb(async pool => {
 
 const plan = rg.appService.planUpsert(`asp-sample${resourceHash}-${rg.location}`, {
   kind: "linux",
+  reserved: true,
   sku: { name: "P0v3" },
 });
 plan.then(p => console.log(`[app] plan ${p.name} ready`));
@@ -118,11 +119,14 @@ const app = (async () => {
 
   const app = await rg.appService.webAppUpsert(`app-sample${resourceHash}-${rg.location}`, {
     serverFarmId: (await plan).id,
-    kind: "app,linux",
+    kind: "app,linux,container",
     identity: { type: "SystemAssigned" },
+    virtualNetworkSubnetId: (await getSubnet("web")).id,
     siteConfig: {
+      linuxFxVersion: "DOCKER|aarondandy/numbers:latest",
       appSettings: [
         { name: "WEBSITE_VNET_ROUTE_ALL", value: "1" },
+        { name: "WEBSITES_PORT", value: "8080" },
         { name: "ConnectionStrings__MyDatabase", value: sqlConnectionString },
         { name: "FOO", value: "BAR" },
       ],
@@ -146,5 +150,4 @@ const app = (async () => {
   return app;
 })();
 
-await app;
-console.log("done");
+console.log(`[app] app ready ${"https://" + (await app).hostNames?.[0]}`);
