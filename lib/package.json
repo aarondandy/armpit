@@ -1,6 +1,6 @@
 {
   "name": "armpit",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.js",
@@ -13,8 +13,8 @@
     "clean": "shx rm -rf ./dist/**/*",
     "build": "run-s -l clean build:*",
     "build:esm": "tsc",
-    "prepack": "shx cp ../LICENSE . && shx cp ../README.md .",
-    "postpack": "shx rm LICENSE && shx rm README.md",
+    "prepack": "shx cp ../LICENSE . && shx cp ../README.md . && shx cp ../CHANGELOG.md .",
+    "postpack": "shx rm LICENSE && shx rm README.md && shx rm CHANGELOG.md",
     "watch": "npm-run-all -l clean --parallel watch:*",
     "watch:esm": "tsc -w",
     "watch:test": "vitest watch",
@@ -41,7 +41,8 @@
   "files": [
     "dist",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "devDependencies": {
     "@eslint/js": "^9.33.0",
