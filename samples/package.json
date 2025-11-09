@@ -14,14 +14,14 @@
     "@azure/arm-storage": "^18.6.0",
     "@azure/service-bus": "^7.9.5",
     "armpit": "file:../lib",
-    "mssql": "^11.0.1",
+    "mssql": "12.1",
     "yargs": "^18.0.0"
   },
   "devDependencies": {
-    "@types/mssql": "^9.1.7",
-    "@types/node": "^24.2.1",
-    "@types/yargs": "^17.0.33",
+    "@types/mssql": "^9.1.8",
+    "@types/node": "^24.10.0",
+    "@types/yargs": "^17.0.34",
     "prettier": "^3.6.2",
-    "tsx": "^4.20.4"
+    "tsx": "^4.20.6"
   }
 }

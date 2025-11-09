@@ -50,9 +50,9 @@
     "npm-run-all": "^4.1.5",
     "prettier": "^3.6.2",
     "shx": "^0.4.0",
-    "typescript": "^5.9.2",
-    "typescript-eslint": "^8.39.1",
-    "vitest": "^3.2.4"
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.3",
+    "vitest": "^4.0.8"
   },
   "dependencies": {
     "@azure/arm-appcontainers": "^2.2.0",
@@ -64,6 +64,6 @@
     "@azure/arm-resources-subscriptions": "^2.1.0",
     "@azure/identity": "^4.11.1",
     "execa": "^9.6.0",
-    "uuid": "^11.1.0"
+    "uuid": "^13.0.0"
   }
 }
