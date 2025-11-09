@@ -30,7 +30,6 @@ import {
   locationNameOrCodeEquals,
 } from "./azureUtils.js";
 import { ManagementClientFactory, handleGet } from "./azureSdkUtils.js";
-import { AzCliInvoker, AzCliOptions, AzCliTemplateFn } from "./azCliInvoker.js";
 
 interface ContainerAppToolsOptions {
   groupName?: string | null;
@@ -187,35 +186,28 @@ function applyContainerApp(app: ContainerApp, descriptor: ContainerAppDescriptor
 }
 
 export class ContainerAppTools {
-  #invoker: AzCliInvoker;
   #managementClientFactory: ManagementClientFactory;
   #options: ContainerAppToolsOptions;
 
   constructor(
     dependencies: {
-      invoker: AzCliInvoker;
       managementClientFactory: ManagementClientFactory;
     },
     options: ContainerAppToolsOptions,
   ) {
-    this.#invoker = dependencies.invoker;
     this.#managementClientFactory = dependencies.managementClientFactory;
     this.#options = shallowCloneDefinedValues(options);
   }
 
   async envGet(name: string, options?: ContainerAppToolsOptions): Promise<ManagedEnvironment | null> {
     const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
-    if (subscriptionId != null && groupName != null) {
-      const client = this.getClient(subscriptionId);
-      return await handleGet(client.managedEnvironments.get(groupName, name, { abortSignal }));
+
+    if (groupName == null) {
+      throw new Error("A group name is required to perform operations.");
     }
 
-    const args = ["--name", name];
-    if (groupName) {
-      args.push("--resource-group", groupName);
-    }
-
-    return this.#getLaxInvokerFn(options)<ManagedEnvironment>`containerapp env show ${args}`;
+    const client = this.getClient(subscriptionId);
+    return await handleGet(client.managedEnvironments.get(groupName, name, { abortSignal }));
   }
 
   async envUpsert(
@@ -269,17 +261,13 @@ export class ContainerAppTools {
 
   async appGet(name: string, options?: ContainerAppToolsOptions): Promise<ContainerApp | null> {
     const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
-    if (subscriptionId != null && groupName != null) {
-      const client = this.getClient(subscriptionId);
-      return await handleGet(client.containerApps.get(groupName, name, { abortSignal }));
+
+    if (groupName == null) {
+      throw new Error("A group name is required to perform operations.");
     }
 
-    const args = ["--name", name];
-    if (groupName) {
-      args.push("--resource-group", groupName);
-    }
-
-    return this.#getLaxInvokerFn(options)<ContainerApp>`containerapp show ${args}`;
+    const client = this.getClient(subscriptionId);
+    return await handleGet(client.containerApps.get(groupName, name, { abortSignal }));
   }
 
   async appUpsert(name: string, optionsDescriptor: ContainerAppDescriptor & ContainerAppToolsOptions) {
@@ -350,33 +338,5 @@ export class ContainerAppTools {
     }
 
     return merged;
-  }
-
-  #buildInvokerOptions(options?: ContainerAppToolsOptions | null): AzCliOptions {
-    const mergedOptions = this.#buildMergedOptions(options);
-    const result: AzCliOptions = {
-      forceAzCommandPrefix: true,
-      simplifyContainerAppResults: true, // required for most containerapp responses
-    };
-    if (mergedOptions.abortSignal != null) {
-      result.abortSignal = mergedOptions.abortSignal;
-    }
-
-    if (mergedOptions.location != null) {
-      result.defaultLocation = mergedOptions.location;
-    }
-
-    if (mergedOptions.groupName != null) {
-      result.defaultResourceGroup = mergedOptions.groupName;
-    }
-
-    return result;
-  }
-
-  #getLaxInvokerFn(options?: ContainerAppToolsOptions): AzCliTemplateFn<null> {
-    return this.#invoker({
-      ...this.#buildInvokerOptions(options),
-      allowBlanks: true,
-    });
   }
 }
