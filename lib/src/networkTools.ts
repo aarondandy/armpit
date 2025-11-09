@@ -54,7 +54,6 @@ import {
   locationNameOrCodeEquals,
 } from "./azureUtils.js";
 import { handleGet, ManagementClientFactory } from "./azureSdkUtils.js";
-import type { AzCliOptions, AzCliInvoker, AzCliTemplateFn } from "./azCliInvoker.js";
 
 interface NetworkToolsOptions {
   groupName?: string | null;
@@ -603,35 +602,28 @@ function pluralPropPairsAreEqual<T>(
 }
 
 export class NetworkTools {
-  #invoker: AzCliInvoker;
   #managementClientFactory: ManagementClientFactory;
   #options: NetworkToolsOptions;
 
   constructor(
     dependencies: {
-      invoker: AzCliInvoker;
       managementClientFactory: ManagementClientFactory;
     },
     options: NetworkToolsOptions,
   ) {
-    this.#invoker = dependencies.invoker;
     this.#managementClientFactory = dependencies.managementClientFactory;
     this.#options = shallowCloneDefinedValues(options);
   }
 
   async asgGet(name: string, options?: NetworkToolsOptions): Promise<ApplicationSecurityGroup | null> {
     const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
-    if (subscriptionId != null && groupName != null) {
-      const client = this.getClient(subscriptionId);
-      return await handleGet(client.applicationSecurityGroups.get(groupName, name, { abortSignal }));
+
+    if (groupName == null) {
+      throw new Error("A group name is required to perform operations.");
     }
 
-    const args = ["--name", name];
-    if (groupName) {
-      args.push("--resource-group", groupName);
-    }
-
-    return this.#getLaxInvokerFn(options)<NetworkSecurityGroup>`network asg show ${args}`;
+    const client = this.getClient(subscriptionId);
+    return await handleGet(client.applicationSecurityGroups.get(groupName, name, { abortSignal }));
   }
 
   async asgMultiUpsert<TDescriptor extends { [key: string]: string }>(
@@ -686,17 +678,13 @@ export class NetworkTools {
 
   async natGatewayGet(name: string, options?: NetworkToolsOptions): Promise<NatGateway | null> {
     const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
-    if (subscriptionId != null && groupName != null) {
-      const client = this.getClient(subscriptionId);
-      return await handleGet(client.natGateways.get(groupName, name, { abortSignal }));
+
+    if (groupName == null) {
+      throw new Error("A group name is required to perform operations.");
     }
 
-    const args = ["--name", name];
-    if (groupName) {
-      args.push("--resource-group", groupName);
-    }
-
-    return this.#getLaxInvokerFn(options)<NatGateway>`network nat gateway show ${args}`;
+    const client = this.getClient(subscriptionId);
+    return await handleGet(client.natGateways.get(groupName, name, { abortSignal }));
   }
 
   async natGatewayUpsert(
@@ -748,17 +736,13 @@ export class NetworkTools {
 
   async nicGet(name: string, options?: NetworkToolsOptions): Promise<NetworkInterface | null> {
     const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
-    if (subscriptionId != null && groupName != null) {
-      const client = this.getClient(subscriptionId);
-      return await handleGet(client.networkInterfaces.get(groupName, name, { abortSignal }));
+
+    if (groupName == null) {
+      throw new Error("A group name is required to perform operations.");
     }
 
-    const args = ["--name", name];
-    if (groupName) {
-      args.push("--resource-group", groupName);
-    }
-
-    return await this.#getLaxInvokerFn(options)<NetworkInterface>`network nic show ${args}`;
+    const client = this.getClient(subscriptionId);
+    return await handleGet(client.networkInterfaces.get(groupName, name, { abortSignal }));
   }
 
   async nicUpsert(
@@ -810,17 +794,13 @@ export class NetworkTools {
 
   async nsgGet(name: string, options?: NetworkToolsOptions): Promise<NetworkSecurityGroup | null> {
     const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
-    if (subscriptionId != null && groupName != null) {
-      const client = this.getClient(subscriptionId);
-      return await handleGet(client.networkSecurityGroups.get(groupName, name, { abortSignal }));
+
+    if (groupName == null) {
+      throw new Error("A group name is required to perform operations.");
     }
 
-    const args = ["--name", name];
-    if (groupName) {
-      args.push("--resource-group", groupName);
-    }
-
-    return await this.#getLaxInvokerFn(options)<NetworkSecurityGroup>`network nsg show ${args}`;
+    const client = this.getClient(subscriptionId);
+    return await handleGet(client.networkSecurityGroups.get(groupName, name, { abortSignal }));
   }
 
   async nsgUpsert(
@@ -886,17 +866,13 @@ export class NetworkTools {
 
   async pipGet(name: string, options?: NetworkToolsOptions): Promise<PublicIPAddress | null> {
     const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
-    if (subscriptionId != null && groupName != null) {
-      const client = this.getClient(subscriptionId);
-      return await handleGet(client.publicIPAddresses.get(groupName, name, { abortSignal }));
+
+    if (groupName == null) {
+      throw new Error("A group name is required to perform operations.");
     }
 
-    const args = ["--name", name];
-    if (groupName) {
-      args.push("--resource-group", groupName);
-    }
-
-    return this.#getLaxInvokerFn(options)<PublicIPAddress>`network public-ip show ${args}`;
+    const client = this.getClient(subscriptionId);
+    return await handleGet(client.publicIPAddresses.get(groupName, name, { abortSignal }));
   }
 
   async pipUpsert(
@@ -950,17 +926,13 @@ export class NetworkTools {
 
   async privateZoneGet(name: string, options?: PrivateDnsToolsOptions): Promise<PrivateZone | null> {
     const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
-    if (subscriptionId != null && groupName != null) {
-      const client = this.getPrivateDnsClient(subscriptionId);
-      return await handleGet(client.privateZones.get(groupName, name, { abortSignal }));
+
+    if (groupName == null) {
+      throw new Error("A group name is required to perform operations.");
     }
 
-    const args = ["--name", name];
-    if (groupName) {
-      args.push("--resource-group", groupName);
-    }
-
-    return this.#getLaxInvokerFn(options)<PrivateZone>`network private-dns zone show ${args}`;
+    const client = this.getPrivateDnsClient(subscriptionId);
+    return await handleGet(client.privateZones.get(groupName, name, { abortSignal }));
   }
 
   async privateZoneUpsert(name: string, options?: PrivateDnsToolsOptions): Promise<PrivateZone> {
@@ -985,17 +957,13 @@ export class NetworkTools {
 
   async privateZoneVnetLinkGet(zoneName: string, name: string, options?: NetworkToolsOptions) {
     const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
-    if (subscriptionId != null && groupName != null) {
-      const client = this.getPrivateDnsClient(subscriptionId);
-      return await handleGet(client.virtualNetworkLinks.get(groupName, zoneName, name, { abortSignal }));
+
+    if (groupName == null) {
+      throw new Error("A group name is required to perform operations.");
     }
 
-    const args = ["--zone-name", zoneName, "--name", name];
-    if (groupName) {
-      args.push("--resource-group", groupName);
-    }
-
-    return this.#getLaxInvokerFn(options)<VirtualNetworkLink>`network private-dns link vnet show ${args}`;
+    const client = this.getPrivateDnsClient(subscriptionId);
+    return await handleGet(client.virtualNetworkLinks.get(groupName, zoneName, name, { abortSignal }));
   }
 
   async privateZoneVnetLinkUpsert(
@@ -1058,17 +1026,13 @@ export class NetworkTools {
 
   async vnetGet(name: string, options?: NetworkToolsOptions): Promise<VirtualNetwork | null> {
     const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
-    if (subscriptionId != null && groupName != null) {
-      const client = this.getClient(subscriptionId);
-      return await handleGet(client.virtualNetworks.get(groupName, name, { abortSignal }));
+
+    if (groupName == null) {
+      throw new Error("A group name is required to perform operations.");
     }
 
-    const args = ["--name", name];
-    if (groupName) {
-      args.push("--resource-group", groupName);
-    }
-
-    return this.#getLaxInvokerFn(options)<NetworkSecurityGroup>`network vnet show ${args}`;
+    const client = this.getClient(subscriptionId);
+    return await handleGet(client.virtualNetworks.get(groupName, name, { abortSignal }));
   }
 
   async vnetUpsert(
@@ -1153,33 +1117,5 @@ export class NetworkTools {
     }
 
     return merged;
-  }
-
-  #buildInvokerOptions(options?: NetworkToolsOptions | null): AzCliOptions {
-    const mergedOptions = this.#buildMergedOptions(options);
-    const result: AzCliOptions = {
-      forceAzCommandPrefix: true,
-      unwrapResults: true, // required for network create/update responses
-    };
-    if (mergedOptions.abortSignal != null) {
-      result.abortSignal = mergedOptions.abortSignal;
-    }
-
-    if (mergedOptions.location != null) {
-      result.defaultLocation = mergedOptions.location;
-    }
-
-    if (mergedOptions.groupName != null) {
-      result.defaultResourceGroup = mergedOptions.groupName;
-    }
-
-    return result;
-  }
-
-  #getLaxInvokerFn(options?: NetworkToolsOptions): AzCliTemplateFn<null> {
-    return this.#invoker({
-      ...this.#buildInvokerOptions(options),
-      allowBlanks: true,
-    });
   }
 }
