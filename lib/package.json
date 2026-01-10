@@ -45,14 +45,14 @@
     "CHANGELOG.md"
   ],
   "devDependencies": {
-    "@eslint/js": "^9.33.0",
-    "@types/node": "^24.2.1",
+    "@eslint/js": "^9.39.2",
+    "@types/node": "^25.0.6",
     "npm-run-all": "^4.1.5",
-    "prettier": "^3.6.2",
+    "prettier": "^3.7.4",
     "shx": "^0.4.0",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.46.3",
-    "vitest": "^4.0.8"
+    "typescript-eslint": "^8.52.0",
+    "vitest": "^4.0.16"
   },
   "dependencies": {
     "@azure/arm-appcontainers": "^3.0.0",
