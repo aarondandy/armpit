@@ -12,7 +12,7 @@
     "@azure/service-bus": "^7.9.5",
     "armpit": "file:../lib",
     "lib": "^5.1.0",
-    "mssql": "12.1",
+    "mssql": "^12.2.0",
     "samples": "^0.0.2",
     "yargs": "^18.0.0"
   },
