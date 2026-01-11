@@ -5,9 +5,10 @@ import { constructId } from "./azureUtils.js";
 import { ManagementClientFactory } from "./azureSdkUtils.js";
 import { NetworkTools } from "./networkTools.js";
 import { isTemplateStringArray } from "./tsUtils.js";
+import { SubscriptionId } from "./azureTypes.js";
 
 describe("upsert vnet", () => {
-  const subscriptionId = "41a80a8e-6547-414a-9d34-ecfbc0f7728d";
+  const subscriptionId = "41a80a8e-6547-414a-9d34-ecfbc0f7728d" as SubscriptionId;
   const groupName = "stuff";
   const location = "centralus";
   const vnetName = "vnet";
@@ -324,7 +325,7 @@ describe("upsert vnet", () => {
 });
 
 describe("upsert nsg", () => {
-  const subscriptionId = "41a80a8e-6547-414a-9d34-ecfbc0f7728d";
+  const subscriptionId = "41a80a8e-6547-414a-9d34-ecfbc0f7728d" as SubscriptionId;
   const groupName = "stuff";
   const location = "centralus";
   const nsgName = "nsg";
@@ -659,7 +660,7 @@ describe("upsert nsg", () => {
 });
 
 describe("upsert private zone", () => {
-  const subscriptionId = "41a80a8e-6547-414a-9d34-ecfbc0f7728d";
+  const subscriptionId = "41a80a8e-6547-414a-9d34-ecfbc0f7728d" as SubscriptionId;
   const groupName = "stuff";
   const zoneName = "zone";
   const toolOptions = { groupName, subscriptionId };

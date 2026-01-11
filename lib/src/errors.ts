@@ -1,4 +1,4 @@
-import { type ResourceSummary } from "./azureUtils.js";
+import { type ResourceSummary } from "./azureTypes.js";
 
 export class ExistingGroupLocationConflictError extends Error {
   groupName: string;

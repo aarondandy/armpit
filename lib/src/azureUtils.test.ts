@@ -1,11 +1,6 @@
 import { describe, it, expect } from "vitest";
-import {
-  isSubscriptionId,
-  isSubscriptionIdOrName,
-  isTenantId,
-  hasNameAndLocation,
-  locationNameOrCodeEquals,
-} from "./azureUtils.js";
+import { isSubscriptionId, isSubscriptionIdOrName, isTenantId } from "./azureTypes.js";
+import { hasNameAndLocation, locationNameOrCodeEquals } from "./azureUtils.js";
 
 describe("isSubscriptionId", () => {
   it("undefined", () => expect(isSubscriptionId(undefined)).toBe(false));

@@ -6,14 +6,8 @@ import {
 import { CallableClassBase, mergeAbortSignals } from "./tsUtils.js";
 import { shallowMergeDefinedValues, shallowCloneDefinedValues } from "./optionsUtils.js";
 import { ExistingGroupLocationConflictError, GroupNotEmptyError } from "./errors.js";
-import {
-  type ResourceSummary,
-  hasNameAndLocation,
-  extractSubscriptionFromId,
-  isSubscriptionId,
-  type SubscriptionId,
-  locationNameOrCodeEquals,
-} from "./azureUtils.js";
+import { isSubscriptionId, type SubscriptionId, type ResourceSummary } from "./azureTypes.js";
+import { hasNameAndLocation, extractSubscriptionFromId, locationNameOrCodeEquals } from "./azureUtils.js";
 import type { AzCliInvoker, AzCliOptions, AzCliTemplateFn } from "./azCliInvoker.js";
 import { ManagementClientFactory, handleGet } from "./azureSdkUtils.js";
 import type { ArmpitCredentialOptions, ArmpitCliCredentialFactory } from "./armpitCredential.js";
@@ -41,12 +35,12 @@ interface GroupToolsDependencies {
 interface GroupUpsertDescriptor {
   name: string;
   location: string;
-  subscriptionId?: SubscriptionId;
+  subscriptionId?: SubscriptionId | string;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export interface ResourceGroupTools {
-  (name: string, location: string, subscriptionId?: SubscriptionId): Promise<AzGroupInterface>;
+  (name: string, location: string, subscriptionId?: SubscriptionId | string): Promise<AzGroupInterface>;
   (descriptor: GroupUpsertDescriptor): Promise<AzGroupInterface>;
 }
 
@@ -66,14 +60,14 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
   protected fnImpl(
     name: string,
     location: string,
-    subscriptionId?: SubscriptionId,
+    subscriptionId?: SubscriptionId | string,
     abortSignal?: AbortSignal,
   ): Promise<AzGroupInterface>;
   protected fnImpl(descriptor: GroupUpsertDescriptor, abortSignal?: AbortSignal): Promise<AzGroupInterface>;
   protected async fnImpl(
     nameOrDescriptor: string | GroupUpsertDescriptor,
     secondArg?: string | AbortSignal,
-    thirdArg?: SubscriptionId,
+    thirdArg?: SubscriptionId | string,
     fourthArg?: AbortSignal,
   ): Promise<AzGroupInterface> {
     let groupName: string;

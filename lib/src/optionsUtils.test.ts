@@ -263,7 +263,7 @@ describe("apply sub-resource reference lists", () => {
 
 describe("unordered array apply", () => {
   it("can add values to blank", () => {
-    const target = [];
+    const target = [] as number[];
     const source = [1, 2, 3];
 
     const result = applyUnorderedArray(target, source);
@@ -274,7 +274,7 @@ describe("unordered array apply", () => {
 
   it("can clear values", () => {
     const target = [1, 2, 3];
-    const source = [];
+    const source = [] as number[];
 
     const result = applyUnorderedArray(target, source);
 
@@ -315,7 +315,7 @@ describe("unordered array apply", () => {
 
 describe("ordered array apply", () => {
   it("can add values to blank", () => {
-    const target = [];
+    const target = [] as number[];
     const source = [1, 2, 3];
 
     const result = applyOrderedArray(target, source);
@@ -326,7 +326,7 @@ describe("ordered array apply", () => {
 
   it("can clear values", () => {
     const target = [1, 2, 3];
-    const source = [];
+    const source = [] as number[];
 
     const result = applyOrderedArray(target, source);
 

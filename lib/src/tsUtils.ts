@@ -1,3 +1,6 @@
+declare const brandKey: unique symbol;
+export type Brand<T, B> = T & { readonly [brandKey]: B };
+
 export abstract class CallableClassBase {
   constructor() {
     const closure = function (...args: unknown[]) {

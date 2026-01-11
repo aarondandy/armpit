@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { buildCliCredential } from "./armpitCredential.js";
-import type { AzCliAccessToken } from "./azureUtils.js";
+import type { AzCliAccessToken } from "./azureTypes.js";
 
 describe("ArmpitCredential getToken", () => {
   beforeEach(() => {

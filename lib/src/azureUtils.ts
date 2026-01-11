@@ -1,42 +1,6 @@
-import { validate as uuidValidate } from "uuid";
-import type { Resource } from "@azure/arm-resources";
-import type { Subscription } from "@azure/arm-resources-subscriptions";
 import { isStringValueArrayEqual } from "./tsUtils.js";
 import { ApplyContext, applyObjectKeyProperties, applySourceToTargetObject } from "./optionsUtils.js";
-
-export type Account = Pick<Subscription, "id" | "managedByTenants" | "state" | "tenantId"> & {
-  readonly cloudName?: "AzureCloud" | (string & {});
-  readonly homeTenantId?: string;
-  readonly isDefault: boolean;
-  readonly name: string;
-  readonly user?: {
-    readonly name: string;
-    readonly type: string;
-  };
-};
-
-export interface SimpleAdUser {
-  id: string;
-  userPrincipalName?: string;
-  displayName?: string;
-}
-
-export type ResourceSummary = Pick<Resource, "id" | "name" | "type">;
-
-export type SubscriptionId = string;
-export function isSubscriptionId(value: unknown): value is SubscriptionId {
-  return uuidValidate(value);
-}
-
-export type SubscriptionIdOrName = string;
-export function isSubscriptionIdOrName(value: unknown): value is SubscriptionIdOrName {
-  return typeof value === "string" && value.length > 0;
-}
-
-export type TenantId = string;
-export function isTenantId(value: unknown): value is TenantId {
-  return uuidValidate(value);
-}
+import { isSubscriptionId, type ResourceId, type SubscriptionId } from "./azureTypes.js";
 
 export function hasNameAndLocation<T>(resource?: T): resource is T & { name: string; location: string } {
   return hasName(resource) && hasLocation(resource);
@@ -52,38 +16,24 @@ export function hasLocation<T>(resource?: T): resource is T & { location: string
   return resource != null && typeof (resource as any).location === "string";
 }
 
-export interface VirtualMachineCreateResult {
-  id: string;
-  resourceGroup: string;
-  powerState?: string;
-  publicIpAddress?: string;
-  fqdns?: string;
-  privateIpAddress?: string;
-  macAddress?: string;
-  location?: string;
-  identity?: { type?: string; userAssignedIdentities?: { [propertyName: string]: object } };
-  zones?: string;
-}
-
-export type ResourceId = string;
-
-export function isResourceId(resourceId?: unknown): resourceId is ResourceId {
-  return resourceId != null && typeof resourceId === "string" && /\/subscriptions\/([^/]+)\//i.test(resourceId);
-}
-
-export function extractSubscriptionFromId(resourceId?: string): string | null {
+export function extractSubscriptionFromId(resourceId?: ResourceId | string): SubscriptionId | null {
   if (!resourceId) {
     return null;
   }
 
   const match = resourceId.match(/\/subscriptions\/([^/]+)\//i);
-  return (match && match[1]) ?? null;
+  const idValue = match && match[1];
+  if (isSubscriptionId(idValue)) {
+    return idValue;
+  }
+
+  return null;
 }
 
 export function constructId(
   subscriptionId?: SubscriptionId,
-  resourceGroupName?: string,
-  resourceType?: string,
+  resourceGroup?: string,
+  provider?: string,
   ...names: string[]
 ) {
   let result = "";
@@ -92,12 +42,12 @@ export function constructId(
     result += `/subscriptions/${subscriptionId}`;
   }
 
-  if (resourceGroupName != null) {
-    result += `/resourceGroups/${resourceGroupName}`;
+  if (resourceGroup != null) {
+    result += `/resourceGroups/${resourceGroup}`;
   }
 
-  if (resourceType != null) {
-    result += `/provider/${resourceType}`;
+  if (provider != null) {
+    result += `/provider/${provider}`;
   }
 
   if (names && names.length > 0) {
@@ -107,20 +57,6 @@ export function constructId(
   }
 
   return result;
-}
-
-export type Scope = string;
-export function isScope(value: unknown): value is Scope {
-  return typeof value === "string" && /^[0-9a-zA-Z-_.:/]+$/.test(value);
-}
-
-export interface AzCliAccessToken {
-  accessToken: string;
-  expiresOn: string;
-  expires_on: number;
-  subscription: SubscriptionIdOrName;
-  tenant: TenantId;
-  tokenType: string;
 }
 
 export function idsEquals(

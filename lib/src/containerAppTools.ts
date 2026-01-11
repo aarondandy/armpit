@@ -23,12 +23,8 @@ import {
   shallowMergeDefinedValues,
   type ApplyContext,
 } from "./optionsUtils.js";
-import {
-  type SubscriptionId,
-  applyManagedServiceIdentity,
-  extractSubscriptionFromId,
-  locationNameOrCodeEquals,
-} from "./azureUtils.js";
+import type { SubscriptionId } from "./azureTypes.js";
+import { applyManagedServiceIdentity, extractSubscriptionFromId, locationNameOrCodeEquals } from "./azureUtils.js";
 import { ManagementClientFactory, handleGet } from "./azureSdkUtils.js";
 
 interface ContainerAppToolsOptions {

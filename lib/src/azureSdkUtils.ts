@@ -1,7 +1,7 @@
 import type { TokenCredential } from "@azure/core-auth";
 import { ServiceClient, ServiceClientOptions } from "@azure/core-client";
 import { isRestError } from "@azure/core-rest-pipeline";
-import { isSubscriptionId, SubscriptionId } from "./azureUtils.js";
+import { isSubscriptionId, type SubscriptionId } from "./azureTypes.js";
 import { ArmpitCliCredentialFactory } from "./armpitCredential.js";
 
 export async function handleGet<T>(promise: Promise<T>): Promise<T | null> {

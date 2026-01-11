@@ -5,13 +5,13 @@ import type { AzCliInvoker, AzCliOptions, AzCliTemplateFn } from "./azCliInvoker
 import {
   type Account,
   type SubscriptionIdOrName,
-  isSubscriptionIdOrName,
   type SubscriptionId,
   isSubscriptionId,
   type TenantId,
   isTenantId,
   type SimpleAdUser,
-} from "./azureUtils.js";
+  isSubscriptionIdOrName,
+} from "./azureTypes.js";
 import {
   type ArmpitCredentialProvider,
   type ArmpitCredential,
@@ -36,8 +36,8 @@ interface AccountListOptions extends AccountToolsOptions {
 }
 
 interface AccountSelectionCriteria {
-  subscriptionId: SubscriptionId;
-  tenantId?: TenantId;
+  subscriptionId: SubscriptionId | string;
+  tenantId?: TenantId | string;
 }
 
 /**
@@ -118,9 +118,13 @@ export class AccountTools implements ArmpitCredentialProvider {
    * @remarks
    * This effectively invokes `az account set`.
    */
-  async set(subscriptionIdOrName: SubscriptionIdOrName, options?: AccountToolsOptions) {
+  async set(subscription: SubscriptionIdOrName | string, options?: AccountToolsOptions) {
+    if (!isSubscriptionIdOrName(subscription)) {
+      throw new Error("Subscription ID is not valid.");
+    }
+
     const invoker = this.#getLaxInvokerFn(options)<Account>;
-    await invoker`account set --subscription ${subscriptionIdOrName}`;
+    await invoker`account set --subscription ${subscription}`;
   }
 
   /**
@@ -129,8 +133,8 @@ export class AccountTools implements ArmpitCredentialProvider {
    * @param tenantId The tenant to log into when required.
    */
   async setOrLogin(
-    subscriptionIdOrName: SubscriptionIdOrName,
-    tenantId?: TenantId,
+    subscription: SubscriptionIdOrName | string,
+    tenantId?: TenantId | string,
     options?: AccountToolsOptions,
   ): Promise<Account | null>;
   /**
@@ -139,22 +143,27 @@ export class AccountTools implements ArmpitCredentialProvider {
    */
   async setOrLogin(criteria: AccountSelectionCriteria, options?: AccountToolsOptions): Promise<Account | null>;
   async setOrLogin(
-    criteria: SubscriptionIdOrName | AccountSelectionCriteria,
-    secondArg?: TenantId | AccountToolsOptions,
+    criteria: SubscriptionIdOrName | string | AccountSelectionCriteria,
+    secondArg?: TenantId | string | AccountToolsOptions,
     thirdArg?: AccountToolsOptions,
   ): Promise<Account | null> {
-    let subscription: SubscriptionId | SubscriptionIdOrName;
     let tenantId: string | undefined;
+    let subscription: SubscriptionIdOrName;
     let options: AccountToolsOptions | undefined;
     let filterAccountsToSubscription: (candidates: Account[]) => Account[];
 
-    if (isSubscriptionIdOrName(criteria)) {
+    if (typeof criteria === "string") {
       // overload: subscription, tenantId?, options?
       if (thirdArg != null) {
         options = thirdArg;
       }
 
+      if (!isSubscriptionIdOrName(criteria)) {
+        throw new Error("Subscription ID is not valid.");
+      }
+
       subscription = criteria;
+
       if (secondArg != null) {
         if (isTenantId(secondArg)) {
           tenantId = secondArg;
@@ -172,24 +181,22 @@ export class AccountTools implements ArmpitCredentialProvider {
         return results;
       };
     } else if (criteria.subscriptionId != null) {
-      // overload: {subscriptionId, tenantId?}, options?
+      // overload: {subscription, tenantId?}, options?
       if (secondArg != null) {
         options = secondArg as AccountToolsOptions;
       }
 
-      if (isSubscriptionId(criteria.subscriptionId)) {
-        subscription = criteria.subscriptionId;
-      } else {
+      if (!isSubscriptionId(criteria.subscriptionId)) {
         throw new Error("Subscription ID is not valid");
       }
 
-      if ("tenantId" in criteria) {
-        if (isTenantId(criteria.tenantId)) {
-          tenantId = criteria.tenantId;
-        } else {
-          throw new Error("Given tenant ID is not valid");
-        }
+      subscription = criteria.subscriptionId;
+
+      if (!isTenantId(criteria.tenantId)) {
+        throw new Error("Given tenant ID is not valid");
       }
+
+      tenantId = criteria.tenantId;
 
       filterAccountsToSubscription = accounts => accounts.filter(a => a.id === subscription);
     } else {

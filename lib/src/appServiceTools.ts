@@ -20,7 +20,8 @@ import {
   type ApplyContext,
   applyObjectKeyProperties,
 } from "./optionsUtils.js";
-import { type SubscriptionId, applyManagedServiceIdentity, locationNameOrCodeEquals } from "./azureUtils.js";
+import type { SubscriptionId } from "./azureTypes.js";
+import { applyManagedServiceIdentity, locationNameOrCodeEquals } from "./azureUtils.js";
 import { ManagementClientFactory, handleGet } from "./azureSdkUtils.js";
 
 interface AppServiceToolsOptions {

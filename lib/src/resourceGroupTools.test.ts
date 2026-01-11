@@ -4,9 +4,10 @@ import { constructId } from "./azureUtils.js";
 import { ManagementClientFactory } from "./azureSdkUtils.js";
 import { ResourceGroupTools } from "./resourceGroupTools.js";
 import { isTemplateStringArray } from "./tsUtils.js";
+import type { SubscriptionId } from "./azureTypes.js";
 
 describe("upsert group", () => {
-  const subscriptionId = "41a80a8e-6547-414a-9d34-ecfbc0f7728d";
+  const subscriptionId = "41a80a8e-6547-414a-9d34-ecfbc0f7728d" as SubscriptionId;
   const resourceClient = new ResourceManagementClient(null!, subscriptionId);
   const clientFactory = new ManagementClientFactory(null!);
 

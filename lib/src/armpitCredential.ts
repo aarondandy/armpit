@@ -7,9 +7,9 @@ import {
   isSubscriptionId,
   type SubscriptionIdOrName,
   isSubscriptionIdOrName,
-  isScope,
+  isAccessTokenScope,
   type AzCliAccessToken,
-} from "./azureUtils.js";
+} from "./azureTypes.js";
 import { type AzCliInvoker } from "./azCliInvoker.js";
 
 export interface ArmpitCredentialOptions {
@@ -52,7 +52,7 @@ export function buildCliCredential(invoker: AzCliInvoker, options?: ArmpitCreden
       scopes = [scopes];
     }
 
-    if (!scopes.every(isScope)) {
+    if (!scopes.every(isAccessTokenScope)) {
       throw new Error("Scopes are invalid");
     }
 

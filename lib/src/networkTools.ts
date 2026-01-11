@@ -47,12 +47,8 @@ import {
   shallowMergeDefinedValues,
   type ApplyContext,
 } from "./optionsUtils.js";
-import {
-  type SubscriptionId,
-  extractSubscriptionFromId,
-  isResourceId,
-  locationNameOrCodeEquals,
-} from "./azureUtils.js";
+import { isResourceId, type SubscriptionId } from "./azureTypes.js";
+import { extractSubscriptionFromId, locationNameOrCodeEquals } from "./azureUtils.js";
 import { handleGet, ManagementClientFactory } from "./azureSdkUtils.js";
 
 interface NetworkToolsOptions {
