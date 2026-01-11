@@ -54,20 +54,19 @@ interface ManagedServiceIdentityDescriptor {
   };
 }
 
-interface ManagedEnvironmentDescriptor
-  extends Pick<
-    ManagedEnvironment,
-    | "daprAIInstrumentationKey"
-    | "daprAIConnectionString"
-    | "vnetConfiguration"
-    | "appLogsConfiguration"
-    | "zoneRedundant"
-    | "workloadProfiles"
-    | "infrastructureResourceGroup"
-    | "peerAuthentication"
-    | "peerTrafficConfiguration"
-    // TODO: customDomainConfiguration
-  > {
+interface ManagedEnvironmentDescriptor extends Pick<
+  ManagedEnvironment,
+  | "daprAIInstrumentationKey"
+  | "daprAIConnectionString"
+  | "vnetConfiguration"
+  | "appLogsConfiguration"
+  | "zoneRedundant"
+  | "workloadProfiles"
+  | "infrastructureResourceGroup"
+  | "peerAuthentication"
+  | "peerTrafficConfiguration"
+  // TODO: customDomainConfiguration
+> {
   identity?: ManagedServiceIdentityDescriptor;
 }
 

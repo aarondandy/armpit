@@ -50,27 +50,26 @@ interface VirtualMachineIdentityDescriptor extends Pick<VirtualMachineIdentity, 
   };
 }
 
-interface DiskDescriptor
-  extends Omit<
-    Disk,
-    | "id"
-    | "name"
-    | "location"
-    | "type"
-    | "managedBy"
-    | "managedByExtended"
-    | "timeCreated"
-    | "diskSizeBytes"
-    | "uniqueId"
-    | "provisioningState"
-    | "diskState"
-    | "shareInfo"
-    | "burstingEnabledTime"
-    | "propertyUpdatesInProgress"
-    | "lastOwnershipUpdateTime"
-    | "sku"
-    | "creationData"
-  > {
+interface DiskDescriptor extends Omit<
+  Disk,
+  | "id"
+  | "name"
+  | "location"
+  | "type"
+  | "managedBy"
+  | "managedByExtended"
+  | "timeCreated"
+  | "diskSizeBytes"
+  | "uniqueId"
+  | "provisioningState"
+  | "diskState"
+  | "shareInfo"
+  | "burstingEnabledTime"
+  | "propertyUpdatesInProgress"
+  | "lastOwnershipUpdateTime"
+  | "sku"
+  | "creationData"
+> {
   sku?: Omit<Disk["sku"], "tier">;
   creationData?: Omit<Disk["creationData"], "sourceUniqueId">;
 }
@@ -138,25 +137,24 @@ function applyVmNicConfig(
   );
 }
 
-interface VirtualMachineDescriptor
-  extends Omit<
-    VirtualMachine,
-    | "id"
-    | "name"
-    | "type"
-    | "etag"
-    | "location"
-    | "tags"
-    | "resources"
-    | "managedBy"
-    | "provisioningState"
-    | "instanceView"
-    | "vmId"
-    | "timeCreated"
-    | "evictionPolicy"
-    | "identity"
-    | "priority"
-  > {
+interface VirtualMachineDescriptor extends Omit<
+  VirtualMachine,
+  | "id"
+  | "name"
+  | "type"
+  | "etag"
+  | "location"
+  | "tags"
+  | "resources"
+  | "managedBy"
+  | "provisioningState"
+  | "instanceView"
+  | "vmId"
+  | "timeCreated"
+  | "evictionPolicy"
+  | "identity"
+  | "priority"
+> {
   evictionPolicy?: `${KnownVirtualMachineEvictionPolicyTypes}`;
   identity?: VirtualMachineIdentityDescriptor;
   priority?: `${KnownVirtualMachinePriorityTypes}`;

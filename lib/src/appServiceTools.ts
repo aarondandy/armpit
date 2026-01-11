@@ -40,23 +40,22 @@ function splitAppServiceOptionsAndDescriptor<T extends AppServiceToolsOptions>(o
 
 type HostingEnvironmentProfileDescriptor = Pick<HostingEnvironmentProfile, "id">;
 
-interface AppServicePlanDescriptor
-  extends Omit<
-    AppServicePlan,
-    | "id"
-    | "name"
-    | "location"
-    | "type"
-    | "status"
-    | "subscription"
-    | "maximumNumberOfWorkers"
-    | "numberOfWorkers"
-    | "geoRegion"
-    | "numberOfSites"
-    | "resourceGroup"
-    | "provisioningState"
-    | "hostingEnvironmentProfile"
-  > {
+interface AppServicePlanDescriptor extends Omit<
+  AppServicePlan,
+  | "id"
+  | "name"
+  | "location"
+  | "type"
+  | "status"
+  | "subscription"
+  | "maximumNumberOfWorkers"
+  | "numberOfWorkers"
+  | "geoRegion"
+  | "numberOfSites"
+  | "resourceGroup"
+  | "provisioningState"
+  | "hostingEnvironmentProfile"
+> {
   hostingEnvironmentProfile?: HostingEnvironmentProfileDescriptor;
 }
 
@@ -128,37 +127,36 @@ function applyKeyedStrings(
   );
 }
 
-interface SiteDescriptor
-  extends Omit<
-    Site,
-    | "id"
-    | "name"
-    | "location"
-    | "type"
-    | "state"
-    | "hostNames"
-    | "repositorySiteName"
-    | "usageState"
-    | "enabledHostNames"
-    | "availabilityState"
-    | "lastModifiedTimeUtc"
-    | "trafficManagerHostNames"
-    | "targetSwapSlot"
-    | "outboundIpAddresses"
-    | "possibleOutboundIpAddresses"
-    | "suspendedTill"
-    | "maxNumberOfWorkers"
-    | "resourceGroup"
-    | "isDefaultContainer"
-    | "defaultHostName"
-    | "slotSwapStatus"
-    | "inProgressOperationId"
-    | "sku"
-    | "identity"
-    | "dnsConfiguration"
-    | "siteConfig"
-    | "hostingEnvironmentProfile"
-  > {
+interface SiteDescriptor extends Omit<
+  Site,
+  | "id"
+  | "name"
+  | "location"
+  | "type"
+  | "state"
+  | "hostNames"
+  | "repositorySiteName"
+  | "usageState"
+  | "enabledHostNames"
+  | "availabilityState"
+  | "lastModifiedTimeUtc"
+  | "trafficManagerHostNames"
+  | "targetSwapSlot"
+  | "outboundIpAddresses"
+  | "possibleOutboundIpAddresses"
+  | "suspendedTill"
+  | "maxNumberOfWorkers"
+  | "resourceGroup"
+  | "isDefaultContainer"
+  | "defaultHostName"
+  | "slotSwapStatus"
+  | "inProgressOperationId"
+  | "sku"
+  | "identity"
+  | "dnsConfiguration"
+  | "siteConfig"
+  | "hostingEnvironmentProfile"
+> {
   dnsConfiguration?: Omit<SiteDnsConfig, "dnsLegacySortOrder">;
   hostingEnvironmentProfile?: HostingEnvironmentProfileDescriptor;
   identity?: ManagedServiceIdentityDescriptor;
