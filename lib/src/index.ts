@@ -1,5 +1,5 @@
 import { filterProperties, pickValues } from "./tsUtils.js";
-import { az } from "./az.js";
+import { az } from "./azRoot.js";
 
 const helpers = {
   filterProperties,
@@ -8,16 +8,8 @@ const helpers = {
 
 export default az;
 export { az, helpers };
-export {
-  isSubscriptionId,
-  isSubscriptionName,
-  isSubscriptionIdOrName,
-  isTenantId,
-  isResourceId,
-  isAccessTokenScope,
-} from "./azureTypes.js";
 export { extractSubscriptionFromId } from "./azureUtils.js";
+export * from "./azureTypes.js";
+export * from "./azInterfaces.js";
 export * from "./nameHash.js";
 export * from "./errors.js";
-
-export type * from "./azureTypes.js";

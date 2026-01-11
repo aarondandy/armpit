@@ -1,21 +1,18 @@
-import {
-  type ResourceGroup,
-  type ResourceManagementClientOptionalParams,
-  ResourceManagementClient,
-} from "@azure/arm-resources";
+import { ResourceManagementClient } from "@azure/arm-resources";
 import { CallableClassBase, mergeAbortSignals } from "./tsUtils.js";
 import { shallowMergeDefinedValues, shallowCloneDefinedValues } from "./optionsUtils.js";
 import { ExistingGroupLocationConflictError, GroupNotEmptyError } from "./errors.js";
 import { isSubscriptionId, type SubscriptionId, type ResourceSummary } from "./azureTypes.js";
 import { hasNameAndLocation, extractSubscriptionFromId, locationNameOrCodeEquals } from "./azureUtils.js";
-import type { AzCliInvoker, AzCliOptions, AzCliTemplateFn } from "./azCliInvoker.js";
 import { ManagementClientFactory, handleGet } from "./azureSdkUtils.js";
-import type { ArmpitCredentialOptions, ArmpitCliCredentialFactory } from "./armpitCredential.js";
-import { AzGroupInterface } from "./interface.js";
+import { AzGroupProvider } from "./azInterfaces.js";
 import { NetworkTools } from "./networkTools.js";
 import { ContainerAppTools } from "./containerAppTools.js";
 import { ComputeTools } from "./computeTools.js";
 import { AppServiceTools } from "./appServiceTools.js";
+import type { ResourceGroup, ResourceManagementClientOptionalParams } from "@azure/arm-resources";
+import type { AzCliInvoker, AzCliOptions, AzCliTemplateFn } from "./azCliInvoker.js";
+import type { ArmpitCredentialOptions, ArmpitCliCredentialFactory } from "./armpitCredential.js";
 
 interface GroupToolsBaseOptions {
   subscriptionId?: SubscriptionId;
@@ -40,8 +37,8 @@ interface GroupUpsertDescriptor {
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export interface ResourceGroupTools {
-  (name: string, location: string, subscriptionId?: SubscriptionId | string): Promise<AzGroupInterface>;
-  (descriptor: GroupUpsertDescriptor): Promise<AzGroupInterface>;
+  (name: string, location: string, subscriptionId?: SubscriptionId | string): Promise<AzGroupProvider>;
+  (descriptor: GroupUpsertDescriptor): Promise<AzGroupProvider>;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
@@ -62,14 +59,14 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
     location: string,
     subscriptionId?: SubscriptionId | string,
     abortSignal?: AbortSignal,
-  ): Promise<AzGroupInterface>;
-  protected fnImpl(descriptor: GroupUpsertDescriptor, abortSignal?: AbortSignal): Promise<AzGroupInterface>;
+  ): Promise<AzGroupProvider>;
+  protected fnImpl(descriptor: GroupUpsertDescriptor, abortSignal?: AbortSignal): Promise<AzGroupProvider>;
   protected async fnImpl(
     nameOrDescriptor: string | GroupUpsertDescriptor,
     secondArg?: string | AbortSignal,
     thirdArg?: SubscriptionId | string,
     fourthArg?: AbortSignal,
-  ): Promise<AzGroupInterface> {
+  ): Promise<AzGroupProvider> {
     let groupName: string;
     let location: string;
     let subscriptionId: SubscriptionId | null = null;

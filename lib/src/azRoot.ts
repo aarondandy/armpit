@@ -2,10 +2,10 @@ import { AzCliExecaInvoker } from "./azCliExecaInvoker.js";
 import { ManagementClientFactory } from "./azureSdkUtils.js";
 import { AccountTools } from "./accountTools.js";
 import { ResourceGroupTools } from "./resourceGroupTools.js";
-import { AzGlobalInterface } from "./interface.js";
+import { AzGlobalProvider } from "./azInterfaces.js";
 import { ArmpitCliCredentialFactory } from "./armpitCredential.js";
 
-const az = (function (): AzGlobalInterface {
+const az = (function (): AzGlobalProvider {
   const abortController = new AbortController();
   process.on("SIGINT", () => abortController.abort("SIGINT received"));
   process.on("SIGTERM", () => abortController.abort("SIGTERM received"));
