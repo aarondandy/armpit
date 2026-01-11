@@ -30,7 +30,7 @@ export class ExistingGroupLocationConflictError extends Error {
 }
 
 export class GroupNotEmptyError extends Error {
-  private static buildMessage(name: string, resources?: ResourceSummary[]) {
+  private static buildMessage(name: string, resources?: readonly ResourceSummary[]) {
     let message = `Group ${name ?? "unknown"} not empty.`;
     if (resources && resources.length > 0) {
       message += " Contains resources: " + resources.map(r => r.name ?? r.id ?? "unknown").join(", ");
@@ -40,9 +40,9 @@ export class GroupNotEmptyError extends Error {
   }
 
   groupName: string;
-  resources?: ResourceSummary[];
+  resources?: readonly ResourceSummary[];
 
-  constructor(name: string, resources?: ResourceSummary[]) {
+  constructor(name: string, resources?: readonly ResourceSummary[]) {
     super(GroupNotEmptyError.buildMessage(name, resources));
 
     this.groupName = name;

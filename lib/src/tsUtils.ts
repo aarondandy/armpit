@@ -14,8 +14,8 @@ export abstract class CallableClassBase {
 }
 
 export function isStringValueOrValueArrayEqual<T extends string | null | undefined>(
-  a: T[] | T,
-  b: T[] | T,
+  a: readonly T[] | T,
+  b: readonly T[] | T,
   opt?: {
     sort?: boolean | ((a?: T, b?: T) => number);
   },
@@ -44,8 +44,8 @@ export function isStringValueOrValueArrayEqual<T extends string | null | undefin
 }
 
 export function isStringValueArrayEqual<T extends string | null | undefined>(
-  a: T[],
-  b: T[],
+  a: readonly T[],
+  b: readonly T[],
   opt?: {
     sort?: boolean | ((a?: T, b?: T) => number);
   },
@@ -55,14 +55,12 @@ export function isStringValueArrayEqual<T extends string | null | undefined>(
   }
 
   if (opt?.sort) {
-    a = [...a];
-    b = [...b];
     if (opt.sort === true) {
-      a.sort();
-      b.sort();
+      a = a.slice().sort();
+      b = b.slice().sort();
     } else {
-      a.sort(opt.sort);
-      b.sort(opt.sort);
+      a = a.slice().sort(opt.sort);
+      b = b.slice().sort(opt.sort);
     }
   }
 
@@ -80,7 +78,7 @@ export function isStringValueArrayEqual<T extends string | null | undefined>(
   return true;
 }
 
-export function isArrayEqual<T>(a: T[], b: T[], equals?: (a: T, b: T) => boolean) {
+export function isArrayEqual<T>(a: readonly T[], b: readonly T[], equals?: (a: T, b: T) => boolean) {
   if (a.length !== b.length) {
     return false;
   }
@@ -100,7 +98,7 @@ export function isArrayEqual<T>(a: T[], b: T[], equals?: (a: T, b: T) => boolean
   return true;
 }
 
-export function isArrayEqualUnordered<T>(a: T[], b: T[], equals?: (a: T, b: T) => boolean) {
+export function isArrayEqualUnordered<T>(a: readonly T[], b: readonly T[], equals?: (a: T, b: T) => boolean) {
   if (a.length !== b.length) {
     return false;
   }
@@ -150,7 +148,7 @@ export function isObjectShallowEqual<T extends object>(a: T, b: T) {
   return true;
 }
 
-export function mergeAbortSignals(...args: (AbortSignal | undefined | null)[]): AbortSignal | null {
+export function mergeAbortSignals(...args: readonly (AbortSignal | undefined | null)[]): AbortSignal | null {
   const signals = args.filter(s => s != null);
   if (signals.length === 1) {
     return signals[0];

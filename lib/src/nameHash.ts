@@ -25,7 +25,7 @@ export class NameHash extends CallableClassBase {
     }
   }
 
-  private static calculateSha256Hash(values: (string | BinaryLike)[]) {
+  private static calculateSha256Hash(values: readonly (string | BinaryLike)[]) {
     const valuesHasher = createHash("sha256");
     for (const value of values) {
       if (typeof value === "string") {
@@ -150,9 +150,9 @@ export class NameHash extends CallableClassBase {
 
   constructor(value: string);
   constructor(value: string, options: NameHashOptions);
-  constructor(...values: string[]);
-  constructor(...args: [...values: string[], options: NameHashOptions]);
-  constructor(...args: string[] | [...values: string[], options: NameHashOptions]) {
+  constructor(...values: readonly string[]);
+  constructor(...args: readonly [...values: readonly string[], options: NameHashOptions]);
+  constructor(...args: readonly string[] | readonly [...values: readonly string[], options: NameHashOptions]) {
     super();
 
     let options: NameHashOptions | null = null;

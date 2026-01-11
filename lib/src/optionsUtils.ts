@@ -75,7 +75,7 @@ export function applyArrayKeyedDescriptor<
   TSource extends object,
 >(
   targets: TTarget[],
-  sources: TSource[],
+  sources: readonly TSource[],
   match: keyof TSource | ((t: TTarget, s: TSource) => boolean),
   apply: (t: TTarget, s: TSource) => boolean,
   create: (s: TSource) => TTarget,
@@ -126,7 +126,7 @@ export function applyArrayKeyedDescriptor<
 
 export function applyArrayIdDescriptors<T extends { id?: string }>(
   targets: T[],
-  sources: { id?: string }[],
+  sources: readonly { id?: string }[],
   options?: {
     deleteUnmatchedTargets?: boolean;
   },
@@ -253,7 +253,7 @@ export function createKeyedArrayPropApplyFn<
   TTargetItem extends { [P in keyof TSourceItem]?: TTargetItem[P] } & object,
   TSourceItem extends { [P in keyof TSourceItem]?: TSourceItem[P] } & object,
   TTarget extends { [P in TProp]?: TTargetItem[] },
-  TSource extends { [P in TProp]?: TSourceItem[] },
+  TSource extends { [P in TProp]?: readonly TSourceItem[] },
   TProp extends keyof TSource,
 >(
   match: keyof TSourceItem | ((t: TTargetItem, s: TSourceItem) => boolean),
@@ -459,7 +459,7 @@ function defaultEqualsTest(a: unknown, b: unknown): boolean {
 
 export function applyUnorderedArray<TValue>(
   targetArray: TValue[],
-  sourceArray: TValue[],
+  sourceArray: readonly TValue[],
   test?: (a: TValue, b: TValue) => boolean,
 ) {
   let appliedChanges = false;
@@ -491,7 +491,7 @@ export function applyUnorderedArray<TValue>(
 export function applyUnorderedValueArrayProp<
   TValue extends string | number,
   TTarget extends { [P in TProp]?: TValue[] },
-  TSource extends { [P in TProp]?: TValue[] },
+  TSource extends { [P in TProp]?: readonly TValue[] },
   TProp extends keyof TSource,
 >(target: TTarget, source: TSource, propName: TProp) {
   let appliedChanges = false;
@@ -517,7 +517,7 @@ export function applyUnorderedValueArrayProp<
 
 export function applyOrderedArray<TValue>(
   targetArray: TValue[],
-  sourceArray: TValue[],
+  sourceArray: readonly TValue[],
   test?: (a: TValue, b: TValue) => boolean,
 ) {
   let appliedChanges = false;
@@ -561,7 +561,7 @@ export function applyOrderedArray<TValue>(
 export function applyOrderedValueArrayProp<
   TValue extends string | number,
   TTarget extends { [P in TProp]?: TValue[] },
-  TSource extends { [P in TProp]?: TValue[] },
+  TSource extends { [P in TProp]?: readonly TValue[] },
   TProp extends keyof TSource,
 >(target: TTarget, source: TSource, propName: TProp) {
   let appliedChanges = false;
@@ -617,9 +617,9 @@ export function applyResourceRefProperty<
 
 export function applyResourceRefListProperty<
   TTargetItem extends { id?: string },
-  TSource extends { [P in TProp]?: { id?: string }[] },
+  TSource extends { [P in TProp]?: readonly { id?: string }[] },
   TProp extends keyof TSource,
->(target: { [P in TProp]?: TTargetItem[] }, source: { [P in TProp]?: { id?: string }[] }, propName: TProp) {
+>(target: { [P in TProp]?: TTargetItem[] }, source: { [P in TProp]?: readonly { id?: string }[] }, propName: TProp) {
   let updated = false;
   const sourceArray = source[propName] as { id?: string }[] | undefined;
   if (sourceArray == null) {

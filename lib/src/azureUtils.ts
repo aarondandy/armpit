@@ -34,7 +34,7 @@ export function constructId(
   subscriptionId?: SubscriptionId,
   resourceGroup?: string,
   provider?: string,
-  ...names: string[]
+  ...names: readonly string[]
 ) {
   let result = "";
 
@@ -60,8 +60,8 @@ export function constructId(
 }
 
 export function idsEquals(
-  a: { id?: string | null }[] | null | undefined,
-  b: { id?: string | null }[] | null | undefined,
+  a: readonly { id?: string | null }[] | null | undefined,
+  b: readonly { id?: string | null }[] | null | undefined,
   sort?: boolean,
 ) {
   if (a == null) {

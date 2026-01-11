@@ -125,8 +125,8 @@ interface SubnetDescriptor extends Pick<Subnet, "name" | "addressPrefix" | "addr
   // TODO: serviceEndpoints, serviceEndpointPolicies
   // TODO: ipamPoolPrefixAllocations
   defaultOutboundAccess?: boolean;
-  delegations?: DelegationDescriptor | string | (DelegationDescriptor | string)[];
-  ipAllocations?: NetworkSubResource[];
+  delegations?: DelegationDescriptor | string | readonly (DelegationDescriptor | string)[];
+  ipAllocations?: readonly NetworkSubResource[];
   natGateway?: NetworkSubResource;
   networkSecurityGroup?: NetworkSubResource;
   privateEndpointNetworkPolicies?: `${KnownVirtualNetworkPrivateEndpointNetworkPolicies}`;
@@ -158,7 +158,7 @@ function applySubnet(target: Subnet, source: SubnetDescriptor, context?: ApplyCo
       typeof d === "string" ? { serviceName: d } : { ...d },
     );
 
-    function assignDelegateNames(delegations: DelegationDescriptor[]) {
+    function assignDelegateNames(delegations: readonly DelegationDescriptor[]) {
       for (let index = 0; index < delegations.length; index++) {
         const delegation = delegations[index];
         if (delegation.name == null || delegation.name === "") {
@@ -213,11 +213,11 @@ interface VnetDescriptor extends Pick<
   | "ipAllocations"
 > {
   // TODO: virtualNetworkPeerings
-  addressSpace?: { addressPrefixes?: string[] };
+  addressSpace?: { addressPrefixes?: readonly string[] };
   addressPrefix?: string;
   bgpCommunities?: Pick<VirtualNetworkBgpCommunities, "virtualNetworkCommunity">;
   privateEndpointVNetPolicies?: `${KnownPrivateEndpointVNetPolicies}`;
-  subnets?: SubnetDescriptor[];
+  subnets?: readonly SubnetDescriptor[];
 }
 
 interface VnetDescriptorWithOptions extends VnetDescriptor {
@@ -363,7 +363,7 @@ function applySecurityRule(target: SecurityRule, source: SecurityRuleDescriptor,
 }
 
 interface NsgDescriptor {
-  securityRules?: SecurityRuleDescriptor[];
+  securityRules?: readonly SecurityRuleDescriptor[];
 }
 
 function applyNsg(nsg: NetworkSecurityGroup, givenDescriptor: NsgDescriptorWithOptions, context?: ApplyContext) {
@@ -543,7 +543,7 @@ interface NetworkInterfaceDescriptor extends Pick<
   nicType?: `${KnownNetworkInterfaceNicType}`;
   auxiliaryMode?: `${KnownNetworkInterfaceAuxiliaryMode}`;
   auxiliarySku?: `${KnownNetworkInterfaceAuxiliarySku}`;
-  ipConfigurations: NetworkInterfaceIPConfigurationDescriptor[];
+  ipConfigurations: readonly NetworkInterfaceIPConfigurationDescriptor[];
 }
 
 function applyNetworkInterface(nic: NetworkInterface, descriptor: NetworkInterfaceDescriptor) {
@@ -555,9 +555,9 @@ function applyNetworkInterface(nic: NetworkInterface, descriptor: NetworkInterfa
 
 function pluralPropPairsAreEqual<T>(
   a: T | null | undefined,
-  aMulti: T[] | null | undefined,
+  aMulti: readonly T[] | null | undefined,
   b: T | null | undefined,
-  bMulti: T[] | null | undefined,
+  bMulti: readonly T[] | null | undefined,
   equals?: (a: T, b: T) => boolean,
 ) {
   equals ??= (a, b) => a == b;

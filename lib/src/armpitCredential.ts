@@ -45,7 +45,10 @@ export function buildCliCredential(invoker: AzCliInvoker, options?: ArmpitCreden
 
   let lastTokenContext: ArmpitTokenContext | null = null;
 
-  const getToken = async function (scopes: string | string[], options?: GetTokenOptions): Promise<AccessToken> {
+  const getToken = async function (
+    scopes: string | readonly string[],
+    options?: GetTokenOptions,
+  ): Promise<AccessToken> {
     // This is loosely based on AzureCliCredential but uses the internals provided by this library
 
     if (typeof scopes === "string") {

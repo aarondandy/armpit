@@ -297,7 +297,7 @@ export class AccountTools implements ArmpitCredentialProvider {
    * @param names The location names to filter locations to.
    * @returns A lot of Azure locations.
    */
-  async listLocations(names?: string[], options?: AccountToolsOptions) {
+  async listLocations(names?: readonly string[], options?: AccountToolsOptions) {
     const invoker = this.#getInvokerFn(options)<Location[]>;
 
     let results: Location[];

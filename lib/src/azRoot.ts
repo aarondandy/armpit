@@ -25,7 +25,7 @@ const az = (function (): AzGlobalProvider {
   });
 
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-  const mainFn = (...args: unknown[]) => (invoker as Function)(...args);
+  const mainFn = (...args: readonly unknown[]) => (invoker as Function)(...args);
   const cliResult = Object.assign(mainFn, {
     account: accountTools,
     group: new ResourceGroupTools(sharedDependencies, { abortSignal: abortController.signal }),
