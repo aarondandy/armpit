@@ -206,17 +206,16 @@ function applySubnet(target: Subnet, source: SubnetDescriptor, context?: ApplyCo
   return appliedChanges;
 }
 
-interface VnetDescriptor
-  extends Pick<
-    VirtualNetwork,
-    | "flowTimeoutInMinutes"
-    | "dhcpOptions"
-    | "enableDdosProtection"
-    | "enableVmProtection"
-    | "ddosProtectionPlan"
-    | "encryption"
-    | "ipAllocations"
-  > {
+interface VnetDescriptor extends Pick<
+  VirtualNetwork,
+  | "flowTimeoutInMinutes"
+  | "dhcpOptions"
+  | "enableDdosProtection"
+  | "enableVmProtection"
+  | "ddosProtectionPlan"
+  | "encryption"
+  | "ipAllocations"
+> {
   // TODO: virtualNetworkPeerings
   addressSpace?: { addressPrefixes?: string[] };
   addressPrefix?: string;
@@ -446,11 +445,10 @@ interface NsgDescriptorWithOptions extends NsgDescriptor {
   deleteUnknownRules?: boolean;
 }
 
-interface PublicIpDescriptor
-  extends Pick<
-    PublicIPAddress,
-    "zones" | "dnsSettings" | "ddosSettings" | "ipAddress" | "publicIPPrefix" | "idleTimeoutInMinutes" | "deleteOption"
-  > {
+interface PublicIpDescriptor extends Pick<
+  PublicIPAddress,
+  "zones" | "dnsSettings" | "ddosSettings" | "ipAddress" | "publicIPPrefix" | "idleTimeoutInMinutes" | "deleteOption"
+> {
   servicePublicIPAddress?: NetworkSubResource;
   natGateway?: NetworkSubResource;
   linkedPublicIPAddress?: NetworkSubResource;
@@ -475,17 +473,16 @@ function applyPip(pip: PublicIPAddress, descriptor: PublicIpDescriptor, context?
   );
 }
 
-interface NatGatewayDescriptor
-  extends Pick<
-    NatGateway,
-    | "zones"
-    | "idleTimeoutInMinutes"
-    | "publicIpAddresses"
-    | "publicIpAddressesV6"
-    | "publicIpPrefixes"
-    | "publicIpPrefixesV6"
-    | "sourceVirtualNetwork"
-  > {
+interface NatGatewayDescriptor extends Pick<
+  NatGateway,
+  | "zones"
+  | "idleTimeoutInMinutes"
+  | "publicIpAddresses"
+  | "publicIpAddressesV6"
+  | "publicIpPrefixes"
+  | "publicIpPrefixesV6"
+  | "sourceVirtualNetwork"
+> {
   sku: `${KnownNatGatewaySkuName}` | NatGateway["sku"];
 }
 
@@ -506,17 +503,16 @@ function applyNatGateway(nat: NatGateway, descriptor: NatGatewayDescriptor, cont
   );
 }
 
-interface NetworkInterfaceIPConfigurationDescriptor
-  extends Omit<
-    NetworkInterfaceIPConfiguration,
-    | "id"
-    | "etag"
-    | "type"
-    | "privateIPAllocationMethod"
-    | "privateIPAddressVersion"
-    | "provisioningState"
-    | "privateLinkConnectionProperties"
-  > {
+interface NetworkInterfaceIPConfigurationDescriptor extends Omit<
+  NetworkInterfaceIPConfiguration,
+  | "id"
+  | "etag"
+  | "type"
+  | "privateIPAllocationMethod"
+  | "privateIPAddressVersion"
+  | "provisioningState"
+  | "privateLinkConnectionProperties"
+> {
   privateIPAllocationMethod?: `${KnownIPAllocationMethod}`;
   privateIPAddressVersion?: `${KnownIPVersion}`;
 }
@@ -543,11 +539,10 @@ function applyIpConfiguration(
   );
 }
 
-interface NetworkInterfaceDescriptor
-  extends Pick<
-    NetworkInterface,
-    "enableAcceleratedNetworking" | "disableTcpStateTracking" | "enableIPForwarding" | "workloadType"
-  > {
+interface NetworkInterfaceDescriptor extends Pick<
+  NetworkInterface,
+  "enableAcceleratedNetworking" | "disableTcpStateTracking" | "enableIPForwarding" | "workloadType"
+> {
   networkSecurityGroup?: NetworkSubResource;
   nicType?: `${KnownNetworkInterfaceNicType}`;
   auxiliaryMode?: `${KnownNetworkInterfaceAuxiliaryMode}`;
