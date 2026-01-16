@@ -10,13 +10,16 @@
     "@azure/arm-sql": "^10.0.0",
     "@azure/arm-storage": "19.1",
     "@azure/service-bus": "^7.9.5",
+    "archiver": "^7.0.1",
     "armpit": "file:../lib",
+    "execa": "^9.6.1",
     "lib": "^5.1.0",
     "mssql": "^12.2.0",
     "samples": "^0.0.2",
     "yargs": "^18.0.0"
   },
   "devDependencies": {
+    "@types/archiver": "^7.0.0",
     "@types/mssql": "^9.1.8",
     "@types/node": "^25.0.6",
     "@types/yargs": "^17.0.35",

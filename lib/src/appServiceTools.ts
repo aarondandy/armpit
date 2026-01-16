@@ -83,7 +83,45 @@ function applyAppServicePlan(target: AppServicePlan, descriptor: AppServicePlanD
 
 type ManagedServiceIdentityDescriptor = Pick<ManagedServiceIdentity, "type" | "userAssignedIdentities">;
 
-type SiteConfigDescriptor = Omit<SiteConfig, "machineKey">;
+interface SiteConfigDescriptor extends Omit<SiteConfig, "machineKey"> {
+  linuxFxVersionDefault?: SiteConfigDescriptor["linuxFxVersion"];
+  windowsFxVersionDefault?: SiteConfigDescriptor["windowsFxVersion"];
+}
+
+function applySiteConfig(target: SiteConfig, descriptor: SiteConfigDescriptor, context?: ApplyContext) {
+  let appliedChanges = false;
+
+  if ((target.linuxFxVersion == null || target.linuxFxVersion === "") && descriptor.linuxFxVersionDefault != null) {
+    target.linuxFxVersion = descriptor.linuxFxVersionDefault;
+  }
+
+  if (
+    (target.windowsFxVersion == null || target.windowsFxVersion === "") &&
+    descriptor.windowsFxVersionDefault != null
+  ) {
+    target.windowsFxVersion = descriptor.windowsFxVersionDefault;
+  }
+
+  if (
+    applySourceToTargetObjectWithTemplate(
+      target,
+      descriptor,
+      {
+        appSettings: createKeyedArrayPropApplyFn("name", applySourceToTargetObject, true, true),
+        azureStorageAccounts: wrapPropObjectApply(applySiteConfigAzureStorageInfo),
+        connectionStrings: createKeyedArrayPropApplyFn("name", applySourceToTargetObject, true, true),
+        ipSecurityRestrictions: createKeyedArrayPropApplyFn("name", applySourceToTargetObject, true, true),
+        metadata: createKeyedArrayPropApplyFn("name", applySourceToTargetObject, true, true),
+        scmIpSecurityRestrictions: createKeyedArrayPropApplyFn("name", applySourceToTargetObject, true, true),
+      },
+      context,
+    )
+  ) {
+    appliedChanges = true;
+  }
+
+  return appliedChanges;
+}
 
 type AzureStorageInfoValueDescriptor = Omit<AzureStorageInfoValue, "state">;
 
@@ -174,14 +212,7 @@ function applySite(target: Site, descriptor: SiteDescriptor, context?: ApplyCont
       },
       hostNameSslStates: createKeyedArrayPropApplyFn("name", applySourceToTargetObject, true, true),
       identity: wrapPropObjectApply(applyManagedServiceIdentity),
-      siteConfig: {
-        appSettings: createKeyedArrayPropApplyFn("name", applySourceToTargetObject, true, true),
-        azureStorageAccounts: wrapPropObjectApply(applySiteConfigAzureStorageInfo),
-        connectionStrings: createKeyedArrayPropApplyFn("name", applySourceToTargetObject, true, true),
-        ipSecurityRestrictions: createKeyedArrayPropApplyFn("name", applySourceToTargetObject, true, true),
-        metadata: createKeyedArrayPropApplyFn("name", applySourceToTargetObject, true, true),
-        scmIpSecurityRestrictions: createKeyedArrayPropApplyFn("name", applySourceToTargetObject, true, true),
-      },
+      siteConfig: wrapPropObjectApply(applySiteConfig),
     },
     context,
   );
