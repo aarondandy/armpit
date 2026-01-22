@@ -1,6 +1,11 @@
-import { az, NameHash } from "armpit";
+import { az, toCliArgPairs, NameHash } from "armpit";
 import { loadMyEnvironment } from "./utils/state.js";
 import type { SkuName, StorageAccount, BlobContainer } from "@azure/arm-storage";
+
+const tags = {
+  env: "samples",
+  script: import.meta.url.split("/").pop(),
+} as const;
 
 const targetEnvironment = await loadMyEnvironment("samples");
 const targetLocation = targetEnvironment.defaultLocation ?? "centralus";
@@ -13,7 +18,8 @@ const resourceHash = new NameHash(targetEnvironment.subscriptionId, { defaultLen
 const sku: SkuName = "Standard_LRS";
 const sa = await rg<StorageAccount>`storage account create
   -n sample${resourceHash} --sku ${sku} --kind StorageV2
-  --allow-blob-public-access true --https-only true`;
+  --allow-blob-public-access true --https-only true
+  --tags ${toCliArgPairs(tags)}`;
 console.log(`storage ready ${sa.name}`);
 
 // Give ourselves access

@@ -1,6 +1,7 @@
 import { isStringValueArrayEqual } from "./tsUtils.js";
 import { ApplyContext, applyObjectKeyProperties, applySourceToTargetObject } from "./optionsUtils.js";
-import { isSubscriptionId, type ResourceId, type SubscriptionId } from "./azureTypes.js";
+import { isSubscriptionId } from "./azureTypes.js";
+import type { ResourceId, SubscriptionId } from "./azureTypes.js";
 
 export function hasNameAndLocation<T>(resource?: T): resource is T & { name: string; location: string } {
   return hasName(resource) && hasLocation(resource);
@@ -114,4 +115,26 @@ export function applyManagedServiceIdentity<
   }
 
   return appliedChanges;
+}
+
+export function toCliArgPairs<
+  T extends {
+    [propertyName: string]: string | number | boolean | null | undefined;
+  },
+>(tags: T): { [K in keyof T]: `${K & string}=${T[K]}` }[keyof T][];
+export function toCliArgPairs<
+  T extends {
+    [propertyName: string]: string | number | boolean | null | undefined;
+  },
+  D extends string,
+>(tags: T, delimiter: D): { [K in keyof T]: `${K & string}${D}${T[K]}` }[keyof T][];
+export function toCliArgPairs<
+  T extends {
+    [propertyName: string]: string | number | boolean | null | undefined;
+  },
+  D extends string,
+>(tags: T, delimiter: D = "=" as D) {
+  return Object.entries(tags).map(
+    ([k, v]) => `${k}${delimiter}${v}` as { [K in keyof T]: `${K & string}${D}${T[K]}` }[keyof T],
+  );
 }

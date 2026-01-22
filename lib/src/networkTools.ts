@@ -80,7 +80,7 @@ function splitPrivateDnsOptionsAndDescriptor<T extends PrivateDnsToolsOptions>(o
   };
 }
 
-interface PrivateZoneVnetLinkDescriptor {
+interface PrivateZoneVnetLinkDescriptor extends Pick<VirtualNetworkLink, "tags"> {
   virtualNetwork: { id?: string } | string;
   registrationEnabled?: boolean;
   resolutionPolicy?: `${KnownResolutionPolicy}`;
@@ -211,6 +211,7 @@ interface VnetDescriptor extends Pick<
   | "ddosProtectionPlan"
   | "encryption"
   | "ipAllocations"
+  | "tags"
 > {
   // TODO: virtualNetworkPeerings
   addressSpace?: { addressPrefixes?: readonly string[] };
@@ -468,6 +469,8 @@ function applyPip(pip: PublicIPAddress, descriptor: PublicIpDescriptor, context?
     context,
   );
 }
+
+type PrivateDnsZoneDescriptor = Pick<PrivateZone, "tags">;
 
 interface NatGatewayDescriptor extends Pick<
   NatGateway,
@@ -926,7 +929,13 @@ export class NetworkTools {
     return await handleGet(client.privateZones.get(groupName, name, { abortSignal }));
   }
 
-  async privateZoneUpsert(name: string, options?: PrivateDnsToolsOptions): Promise<PrivateZone> {
+  async privateZoneUpsert(
+    name: string,
+    descriptorOptions?: PrivateDnsZoneDescriptor & PrivateDnsToolsOptions,
+  ): Promise<PrivateZone> {
+    const { options, descriptor } = descriptorOptions
+      ? splitPrivateDnsOptionsAndDescriptor(descriptorOptions)
+      : { descriptor: {} };
     const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
     if (groupName == null) {
       throw new Error("A group name is required to perform DNS zone operations");
@@ -938,7 +947,7 @@ export class NetworkTools {
       zone = await client.privateZones.beginCreateOrUpdateAndWait(
         groupName,
         name,
-        { location: "global" },
+        { ...descriptor, location: "global" },
         { abortSignal },
       );
     }

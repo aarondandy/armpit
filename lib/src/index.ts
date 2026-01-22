@@ -8,7 +8,7 @@ const helpers = {
 
 export default az;
 export { az, helpers };
-export { extractSubscriptionFromId } from "./azureUtils.js";
+export { extractSubscriptionFromId, toCliArgPairs } from "./azureUtils.js";
 export * from "./azureTypes.js";
 export * from "./azInterfaces.js";
 export * from "./nameHash.js";

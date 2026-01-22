@@ -61,6 +61,7 @@ interface ManagedEnvironmentDescriptor extends Pick<
   | "infrastructureResourceGroup"
   | "peerAuthentication"
   | "peerTrafficConfiguration"
+  | "tags"
   // TODO: customDomainConfiguration
 > {
   identity?: ManagedServiceIdentityDescriptor;
@@ -153,7 +154,7 @@ function applyContainerTemplate(template: Template, descriptor: TemplateDescript
   );
 }
 
-interface ContainerAppDescriptor extends Pick<ContainerApp, "environmentId" | "workloadProfileName"> {
+interface ContainerAppDescriptor extends Pick<ContainerApp, "environmentId" | "workloadProfileName" | "tags"> {
   configuration?: ConfigurationDescriptor;
   identity?: ManagedServiceIdentityDescriptor;
   template?: TemplateDescriptor;
