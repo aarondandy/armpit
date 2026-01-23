@@ -8,11 +8,7 @@ import { loadMyEnvironment } from "./utils/state.js";
 // Environment & Subscription
 // --------------------------
 
-const tags = {
-  env: "samples",
-  script: import.meta.url.split("/").pop()!,
-} as const;
-
+const tags = { env: "samples", script: import.meta.url.split("/").pop()! } as const;
 const targetEnvironment = await loadMyEnvironment("samples");
 const targetLocation = targetEnvironment.defaultLocation ?? "centralus";
 await az.account.setOrLogin(targetEnvironment);
@@ -20,7 +16,11 @@ await az.account.setOrLogin(targetEnvironment);
 const myIp = fetch("https://api.ipify.org/").then(r => r.text());
 let myUser = await az.account.showSignedInUser();
 
-const rg = await az.group(`samples-${targetLocation}`, targetLocation);
+const rg = await az.group({
+  name: `samples-${targetLocation}`,
+  location: targetLocation,
+  tags,
+});
 const resourceHash = new NameHash(targetEnvironment.subscriptionId, rg.name, { defaultLength: 6 });
 
 // -------

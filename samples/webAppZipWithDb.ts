@@ -1,7 +1,7 @@
 import path from "node:path";
 import fs from "node:fs";
 import archiver from "archiver";
-import { az, NameHash } from "armpit";
+import { az, toCliArgPairs, NameHash } from "armpit";
 import { $ } from "execa";
 import mssql from "mssql";
 import type { PrivateEndpoint } from "@azure/arm-network";
@@ -12,6 +12,7 @@ import { loadMyEnvironment } from "./utils/state.js";
 // Environment & Subscription
 // --------------------------
 
+const tags = { env: "samples", script: import.meta.url.split("/").pop()! } as const;
 const targetEnvironment = await loadMyEnvironment("samples");
 const targetLocation = targetEnvironment.defaultLocation ?? "centralus";
 await az.account.setOrLogin(targetEnvironment);
@@ -19,7 +20,11 @@ await az.account.setOrLogin(targetEnvironment);
 const myIp = fetch("https://api.ipify.org/").then(r => r.text());
 let myUser = await az.account.showSignedInUser();
 
-const rg = await az.group(`samples-${targetLocation}`, targetLocation);
+const rg = await az.group({
+  name: `samples-${targetLocation}`,
+  location: targetLocation,
+  tags,
+});
 const resourceHash = new NameHash(targetEnvironment.subscriptionId, rg.name, { defaultLength: 6 });
 
 // -------
@@ -39,17 +44,19 @@ const vnet = rg.network.vnetUpsert(`vnet-sample-${rg.location}`, {
       delegations: "Microsoft.Web/serverFarms",
     },
   ],
+  tags,
 });
 vnet.then(vnet => console.log(`[net] vnet ${vnet.name} ${vnet.addressSpace?.addressPrefixes?.[0]}`));
 const getSubnet = async (name: string) => (await vnet).subnets!.find(s => s.name === name)!;
 
-const zonePlDb = rg.network.privateZoneUpsert("privatelink.database.windows.net");
+const zonePlDb = rg.network.privateZoneUpsert("privatelink.database.windows.net", { tags });
 zonePlDb.then(zone => console.log(`[net] dns ${zone.name}`));
 
 const link = (async () =>
   rg.network.privateZoneVnetLinkUpsert((await zonePlDb).name!, `pdlink-sampledb-${rg.location}`, {
     virtualNetwork: await vnet,
     registrationEnabled: false,
+    tags,
   }))();
 link.then(link => console.log(`[net] dns link ${link.name} ready`));
 
@@ -59,10 +66,12 @@ link.then(link => console.log(`[net] dns link ${link.name} ready`));
 
 const dbServer = rg<SqlServer>`sql server create -n db-sample-${resourceHash}-${rg.location}
   --enable-ad-only-auth --external-admin-principal-type User
-  --external-admin-name ${myUser.userPrincipalName} --external-admin-sid ${myUser.id}`;
+  --external-admin-name ${myUser.userPrincipalName} --external-admin-sid ${myUser.id}
+  --tags ${toCliArgPairs(tags)}`;
 dbServer.then(s => console.log(`[db] server created ${s.fullyQualifiedDomainName}`));
 
-const db = (async () => rg<SqlDatabase>`sql db create --name sample --server ${(await dbServer).name} --tier Basic`)();
+const db = (async () =>
+  rg<SqlDatabase>`sql db create --name sample --server ${(await dbServer).name} --tier Basic --tags ${toCliArgPairs(tags)}`)();
 db.then(db => console.log(`[db] database ${db.name} created`));
 
 const runOnDb = async (action: (pool: mssql.ConnectionPool) => Promise<void>) => {
@@ -99,7 +108,8 @@ runOnDb(async pool => {
   const privateEndpoint = await rg<PrivateEndpoint>`network private-endpoint create
     --name ${name} --connection-name ${name} --nic-name ${name}
     --group-id sqlServer --private-connection-resource-id ${(await dbServer).id}
-    --vnet-name ${(await vnet).name} --subnet ${(await getSubnet("db")).name}`;
+    --vnet-name ${(await vnet).name} --subnet ${(await getSubnet("db")).name}
+    --tags ${toCliArgPairs(tags)}`;
   const { name: zoneName, id: zoneId } = await zonePlDb;
   await rg`network private-endpoint dns-zone-group create
     --name ${name} --endpoint-name ${privateEndpoint.name}
@@ -115,6 +125,7 @@ const plan = rg.appService.planUpsert(`asp-sample${resourceHash}-${rg.location}`
   kind: "linux",
   reserved: true,
   sku: { name: "P0v3" },
+  tags,
 });
 plan.then(p => console.log(`[app] plan ${p.name} ready`));
 
@@ -134,6 +145,7 @@ const app = (async () => {
         { name: "FOO", value: "BAR" },
       ],
     },
+    tags,
   });
   console.log(`[app] app ${app.name} ready`);
 

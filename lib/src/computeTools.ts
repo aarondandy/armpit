@@ -145,7 +145,6 @@ interface VirtualMachineDescriptor extends Omit<
   | "type"
   | "etag"
   | "location"
-  | "tags"
   | "resources"
   | "managedBy"
   | "provisioningState"

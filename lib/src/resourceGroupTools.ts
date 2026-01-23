@@ -1,9 +1,14 @@
 import { ResourceManagementClient } from "@azure/arm-resources";
-import { CallableClassBase, mergeAbortSignals } from "./tsUtils.js";
+import { CallableClassBase, isObjectShallowEqual, mergeAbortSignals } from "./tsUtils.js";
 import { shallowMergeDefinedValues, shallowCloneDefinedValues } from "./optionsUtils.js";
 import { ExistingGroupLocationConflictError, GroupNotEmptyError } from "./errors.js";
 import { isSubscriptionId, type SubscriptionId, type ResourceSummary } from "./azureTypes.js";
-import { hasNameAndLocation, extractSubscriptionFromId, locationNameOrCodeEquals } from "./azureUtils.js";
+import {
+  hasNameAndLocation,
+  extractSubscriptionFromId,
+  locationNameOrCodeEquals,
+  toCliArgPairs,
+} from "./azureUtils.js";
 import { ManagementClientFactory, handleGet } from "./azureSdkUtils.js";
 import { AzGroupProvider } from "./azInterfaces.js";
 import { NetworkTools } from "./networkTools.js";
@@ -29,7 +34,7 @@ interface GroupToolsDependencies {
   managementClientFactory: ManagementClientFactory;
 }
 
-interface GroupUpsertDescriptor {
+interface GroupUpsertDescriptor extends Pick<ResourceGroup, "tags"> {
   name: string;
   location: string;
   subscriptionId?: SubscriptionId | string;
@@ -76,6 +81,8 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
       throw new Error("Name or descriptor is required");
     }
 
+    let tags: GroupUpsertDescriptor["tags"];
+
     if (typeof nameOrDescriptor === "string") {
       // overload: name, location, subscriptionId?, abortSignal?
       abortSignal = fourthArg;
@@ -97,7 +104,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
         subscriptionId = thirdArg;
       }
     } else if (nameOrDescriptor.name != null) {
-      // overload: {name, location, subscriptionId?}, abortSignal?
+      // overload: {name, location, subscriptionId?, ...}, abortSignal?
       abortSignal = secondArg as AbortSignal;
 
       if (typeof nameOrDescriptor.name !== "string") {
@@ -119,6 +126,8 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
 
         subscriptionId = nameOrDescriptor.subscriptionId;
       }
+
+      tags = nameOrDescriptor.tags;
     } else {
       throw new Error("Unexpected arguments");
     }
@@ -138,23 +147,34 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
     const baseOptions = { subscriptionId: subscriptionId ?? undefined, abortSignal };
     let group = await this.get(groupName, baseOptions);
     if (group == null) {
-      group = await this.create(groupName, location, baseOptions);
-    } else if (!locationNameOrCodeEquals(location, group.location)) {
-      throw new ExistingGroupLocationConflictError(group, location);
+      group = await this.create(groupName, location, { tags, ...baseOptions });
+    } else {
+      if (!locationNameOrCodeEquals(location, group.location)) {
+        throw new ExistingGroupLocationConflictError(group, location);
+      }
     }
 
     if (!hasNameAndLocation(group)) {
       throw new Error("Resource group is not correctly formed");
     }
 
+    if (subscriptionId == null && group.id != null) {
+      subscriptionId = extractSubscriptionFromId(group.id);
+    }
+
+    if (tags && (group.tags == null || !isObjectShallowEqual(group.tags, tags))) {
+      if (!subscriptionId) {
+        throw new Error("Subscription ID is required to update group");
+      }
+
+      const client = this.getClient(subscriptionId);
+      group = await client.resourceGroups.update(group.name, { tags }, { abortSignal });
+    }
+
     const invoker = this.#invoker({
       defaultLocation: group.location ?? location,
       defaultResourceGroup: group.name ?? groupName,
     });
-
-    if (subscriptionId == null && group.id != null) {
-      subscriptionId = extractSubscriptionFromId(group.id);
-    }
 
     const generalToolOptions = {
       groupName,
@@ -212,14 +232,24 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
     return !!(await this.#getLaxInvokerFn(options)<boolean>`group exists ${args}`);
   }
 
-  async create(name: string, location: string, options?: GroupToolsBaseOptions): Promise<ResourceGroup> {
+  async create(
+    name: string,
+    location: string,
+    options?: GroupToolsBaseOptions & Pick<GroupUpsertDescriptor, "tags">,
+  ): Promise<ResourceGroup> {
     const { subscriptionId, abortSignal } = this.#buildMergedOptions(options);
     if (subscriptionId != null) {
       const client = this.getClient(subscriptionId);
-      return await client.resourceGroups.createOrUpdate(name, { location }, { abortSignal });
+      return await client.resourceGroups.createOrUpdate(name, { location, tags: options?.tags }, { abortSignal });
     }
 
-    return await this.#getInvokerFn(options)<ResourceGroup>`group create --name ${name} --location ${location}`;
+    if (options?.tags != null) {
+      return await this.#getInvokerFn(
+        options,
+      )<ResourceGroup>`group create --name ${name} --location ${location} --tags ${toCliArgPairs(options.tags)}`;
+    } else {
+      return await this.#getInvokerFn(options)<ResourceGroup>`group create --name ${name} --location ${location}`;
+    }
   }
 
   async delete(name: string, options?: GroupToolsBaseOptions) {

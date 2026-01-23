@@ -1,19 +1,25 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import { az, NameHash } from "armpit";
+import { az, toCliArgPairs, NameHash } from "armpit";
 import { loadMyEnvironment } from "./utils/state.js";
 import type { SBNamespace, SBQueue } from "@azure/arm-servicebus";
 import { ServiceBusClient, type ServiceBusError } from "@azure/service-bus";
 
+const tags = { env: "samples", script: import.meta.url.split("/").pop()! } as const;
 const targetEnvironment = await loadMyEnvironment("samples");
 const targetLocation = targetEnvironment.defaultLocation ?? "centralus";
 await az.account.setOrLogin(targetEnvironment);
 const myUser = await az.account.showSignedInUser();
 
-const rg = await az.group(`samples-${targetLocation}`, targetLocation);
+const rg = await az.group({
+  name: `samples-${targetLocation}`,
+  location: targetLocation,
+  tags,
+});
 const resourceHash = new NameHash(targetEnvironment.subscriptionId, { defaultLength: 6 }).concat(rg.name);
 
 console.log("Preparing servicebus resources...");
-const namespace = await rg<SBNamespace>`servicebus namespace create -n sb-sample-${resourceHash} --sku basic`;
+const namespace =
+  await rg<SBNamespace>`servicebus namespace create -n sb-sample-${resourceHash} --sku basic --tags ${toCliArgPairs(tags)}`;
 console.log(`namespace ${namespace.name} created: ${namespace.serviceBusEndpoint}`);
 
 const queue = await rg<SBQueue>`servicebus queue create --name stuff --namespace-name ${namespace.name}`;

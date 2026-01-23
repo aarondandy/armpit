@@ -5,16 +5,17 @@ import { loadMyEnvironment } from "./utils/state.js";
 // Environment & Subscription
 // --------------------------
 
-const tags = {
-  env: "samples",
-  script: import.meta.url.split("/").pop()!,
-} as const;
-
+const tags = { env: "samples", script: import.meta.url.split("/").pop()! } as const;
 const targetEnvironment = await loadMyEnvironment("samples");
 const targetLocation = targetEnvironment.defaultLocation ?? "centralus";
 await az.account.setOrLogin(targetEnvironment);
 
-const rg = await az.group(`samples-${targetLocation}`, targetLocation, targetEnvironment.subscriptionId);
+const rg = await az.group({
+  name: `samples-${targetLocation}`,
+  location: targetLocation,
+  subscriptionId: targetEnvironment.subscriptionId,
+  tags,
+});
 const resourceHash = new NameHash(targetEnvironment.subscriptionId, rg.name, { defaultLength: 6 });
 
 const appEnv = await rg.containerApp.envUpsert(`appenv-sample-${resourceHash}-${rg.location}`, {

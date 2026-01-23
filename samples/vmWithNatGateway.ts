@@ -5,16 +5,21 @@ import { loadMyEnvironment } from "./utils/state.js";
 // Environment & Subscription
 // --------------------------
 
+const tags = { env: "samples", script: import.meta.url.split("/").pop()! } as const;
 const targetEnvironment = await loadMyEnvironment("samples");
 const targetLocation = targetEnvironment.defaultLocation ?? "centralus";
 await az.account.setOrLogin(targetEnvironment);
 
 const myIp = fetch("https://api.ipify.org/").then(r => r.text());
 
-const rg = await az.group(`samples-${targetLocation}`, targetLocation);
+const rg = await az.group({
+  name: `samples-${targetLocation}`,
+  location: targetLocation,
+  tags,
+});
 const resourceHash = new NameHash(targetEnvironment.subscriptionId, rg.name, { defaultLength: 6 });
 
-const asgJump = rg.network.asgUpsert(`asg-jump`);
+const asgJump = rg.network.asgUpsert(`asg-jump`, { tags });
 
 const nsg = rg.network.nsgUpsert(`nsg-sample`, {
   securityRules: [
@@ -29,11 +34,13 @@ const nsg = rg.network.nsgUpsert(`nsg-sample`, {
       destinationPortRange: "3389",
     },
   ],
+  tags,
 });
 
 const natIp = rg.network.pipUpsert(`pip-natsample-${rg.location}`, {
   sku: "Standard",
   publicIPAllocationMethod: "Static",
+  tags,
 });
 natIp.then(x => console.log(`[net] nat ip ${x.ipAddress}`));
 
@@ -41,6 +48,7 @@ const nat = (async () =>
   rg.network.natGatewayUpsert(`nat-sample-${rg.location}`, {
     sku: "Standard",
     publicIpAddresses: [await natIp],
+    tags,
   }))();
 nat.then(x => console.log(`[net] nat gateway ${x.name}`));
 
@@ -55,6 +63,7 @@ const vnet = (async () =>
         networkSecurityGroup: await nsg,
       },
     ],
+    tags,
   }))();
 vnet.then(x => console.log(`[net] vnet ${x.name}`));
 
@@ -62,6 +71,7 @@ const vmIp = rg.network.pipUpsert(`pip-jump-${rg.location}`, {
   sku: "Standard",
   publicIPAllocationMethod: "Static",
   dnsSettings: { domainNameLabel: `jump-sample-${resourceHash}` },
+  tags,
 });
 vmIp.then(x => console.log(`[vm] ip ${x.ipAddress}`));
 
@@ -80,6 +90,7 @@ const nic = (async () =>
         applicationSecurityGroups: [await asgJump],
       },
     ],
+    tags,
   }))();
 nic.then(x => console.log(`[vm] nic created ${x.name}`));
 
@@ -101,6 +112,7 @@ const vm = await rg.compute.vmUpsert(`vm-jump${rg.location}${resourceHash}`, {
     },
     osDisk: { name: `vm-jump${rg.location}${resourceHash}-os`, createOption: "FromImage", diskSizeGB: 32 },
   },
+  tags,
 });
 console.log(`[vm] vm created ${vm.name}`);
 

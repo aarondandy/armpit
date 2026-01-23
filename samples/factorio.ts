@@ -1,5 +1,5 @@
 import path from "node:path";
-import { az, NameHash, helpers, type VirtualMachineCreateResult } from "armpit";
+import { az, toCliArgPairs, helpers, NameHash, type VirtualMachineCreateResult } from "armpit";
 import { loadMyEnvironment, loadState, saveState } from "./utils/state.js";
 import type { NetworkInterface } from "@azure/arm-network";
 import type { Disk, VirtualMachineExtension, RunCommandResult } from "@azure/arm-compute";
@@ -8,6 +8,7 @@ import type { Disk, VirtualMachineExtension, RunCommandResult } from "@azure/arm
 // Environment & Subscription
 // --------------------------
 
+const tags = { env: "samples", script: import.meta.url.split("/").pop()! } as const;
 const targetEnvironment = await loadMyEnvironment("samples");
 const targetLocation = targetEnvironment.defaultLocation ?? "centralus";
 await az.account.setOrLogin(targetEnvironment);
@@ -20,17 +21,25 @@ const myUser = await az.account.showSignedInUser();
 // Resource Group
 // --------------
 
-const rg = await az.group(`videogames-${targetLocation}`, targetLocation, targetEnvironment.subscriptionId);
+const rg = await az.group({
+  name: `videogames-${targetLocation}`,
+  location: targetLocation,
+  subscriptionId: targetEnvironment.subscriptionId,
+  tags,
+});
 const resourceHash = new NameHash(targetEnvironment.subscriptionId).concat(rg.name);
 
 // -------
 // Network
 // -------
 
-const asgs = rg.network.asgMultiUpsert({
-  ssh: "asg-ssh",
-  factorio: "asg-factorio",
-});
+const asgs = rg.network.asgMultiUpsert(
+  {
+    ssh: "asg-ssh",
+    factorio: "asg-factorio",
+  },
+  { tags },
+);
 
 const nsg = (async () =>
   rg.network.nsgUpsert(`nsg-videogames-${rg.location}`, {
@@ -55,6 +64,7 @@ const nsg = (async () =>
         destinationPortRange: "22",
       },
     ],
+    tags,
   }))();
 nsg.then(nsg => console.log(`[net] nsg ${nsg.name}`));
 
@@ -73,6 +83,7 @@ const vnet = (async () =>
         addressPrefix: "10.64.8.0/24",
       },
     ],
+    tags,
   }))();
 vnet.then(vnet => console.log(`[net] vnet ${vnet.name} ${vnet.addressSpace?.addressPrefixes?.[0]}`));
 const subnetVms = vnet.then(vnet => vnet.subnets!.find(s => s.name === "vms")!);
@@ -90,19 +101,22 @@ const pip = rg.network.pipUpsert(`pip-${state.serverName}`, {
   dnsSettings: { domainNameLabel: state.serverName },
   publicIPAllocationMethod: "Static",
   sku: "Basic",
+  tags,
 });
 pip.then(pip => console.log(`[vm] public ip ${pip.dnsSettings?.fqdn} (${pip.ipAddress})`));
 
 const nic = (async () => rg<NetworkInterface>`network nic create -n vm-${state.serverName}-nic
   --subnet ${(await subnetVms).id} --public-ip-address ${(await pip).name}
   --network-security-group ${(await nsg).name}
-  --asgs ${helpers.pickValues(await asgs, "ssh", "factorio").map(a => a.name)}`)();
+  --asgs ${helpers.pickValues(await asgs, "ssh", "factorio").map(a => a.name)}
+  --tags ${toCliArgPairs(tags)}`)();
 nic.then(nic => console.log(`[vm] nic ${nic.ipConfigurations?.[0]?.privateIPAddress}`));
 
 const osDisk = rg<Disk>`disk create -n vm-${state.serverName}-os
   --hyper-v-generation V2
   --os-type Linux --image-reference Canonical:ubuntu-24_04-lts:server:latest
-  --sku Premium_LRS --size-gb 32`;
+  --sku Premium_LRS --size-gb 32
+  --tags ${toCliArgPairs(tags)}`;
 osDisk.then(d => console.log(`[vm] disk ${d.name}`));
 
 const vm = await (async () => {
@@ -111,7 +125,8 @@ const vm = await (async () => {
     -n ${name} --computer-name ${state.serverName}
     --size Standard_D2als_v6 --nics ${(await nic).id}
     --attach-os-disk ${(await osDisk).name} --os-type linux
-    --assign-identity [system]`;
+    --assign-identity [system]
+    --tags ${toCliArgPairs(tags)}`;
   console.log(`[vm] server ${name}`);
   return { name, ...vmResult };
 })();

@@ -363,7 +363,9 @@ function applySecurityRule(target: SecurityRule, source: SecurityRuleDescriptor,
   return appliedChanges;
 }
 
-interface NsgDescriptor {
+type AsgOptions = Pick<ApplicationSecurityGroup, "tags">;
+
+interface NsgDescriptor extends Pick<NetworkSecurityGroup, "tags"> {
   securityRules?: readonly SecurityRuleDescriptor[];
 }
 
@@ -444,7 +446,14 @@ interface NsgDescriptorWithOptions extends NsgDescriptor {
 
 interface PublicIpDescriptor extends Pick<
   PublicIPAddress,
-  "zones" | "dnsSettings" | "ddosSettings" | "ipAddress" | "publicIPPrefix" | "idleTimeoutInMinutes" | "deleteOption"
+  | "zones"
+  | "dnsSettings"
+  | "ddosSettings"
+  | "ipAddress"
+  | "publicIPPrefix"
+  | "idleTimeoutInMinutes"
+  | "deleteOption"
+  | "tags"
 > {
   servicePublicIPAddress?: NetworkSubResource;
   natGateway?: NetworkSubResource;
@@ -481,6 +490,7 @@ interface NatGatewayDescriptor extends Pick<
   | "publicIpPrefixes"
   | "publicIpPrefixesV6"
   | "sourceVirtualNetwork"
+  | "tags"
 > {
   sku: `${KnownNatGatewaySkuName}` | NatGateway["sku"];
 }
@@ -540,7 +550,7 @@ function applyIpConfiguration(
 
 interface NetworkInterfaceDescriptor extends Pick<
   NetworkInterface,
-  "enableAcceleratedNetworking" | "disableTcpStateTracking" | "enableIPForwarding" | "workloadType"
+  "enableAcceleratedNetworking" | "disableTcpStateTracking" | "enableIPForwarding" | "workloadType" | "tags"
 > {
   networkSecurityGroup?: NetworkSubResource;
   nicType?: `${KnownNetworkInterfaceNicType}`;
@@ -622,7 +632,7 @@ export class NetworkTools {
 
   async asgMultiUpsert<TDescriptor extends { [key: string]: string }>(
     descriptor: TDescriptor,
-    options?: NetworkToolsOptions,
+    options?: NetworkToolsOptions & AsgOptions,
   ): Promise<{ [K in keyof TDescriptor]: ApplicationSecurityGroup }> {
     const promises = Object.entries(descriptor).map(async ([key, name]: [keyof TDescriptor, string]) => {
       const asg = await this.asgUpsert(name, options);
@@ -632,7 +642,7 @@ export class NetworkTools {
     return Object.fromEntries(results) as { [K in keyof TDescriptor]: ApplicationSecurityGroup };
   }
 
-  async asgUpsert(name: string, options?: NetworkToolsOptions): Promise<ApplicationSecurityGroup> {
+  async asgUpsert(name: string, options?: NetworkToolsOptions & AsgOptions): Promise<ApplicationSecurityGroup> {
     const opContext = this.#buildMergedOptions(options);
 
     if (opContext.groupName == null) {
@@ -658,6 +668,12 @@ export class NetworkTools {
 
       upsertRequired = true;
       asg = { name, location };
+    }
+
+    if (options?.tags != null) {
+      if (applySourceToTargetObject(asg, { tags: options.tags })) {
+        upsertRequired = true;
+      }
     }
 
     if (upsertRequired) {
@@ -935,21 +951,35 @@ export class NetworkTools {
   ): Promise<PrivateZone> {
     const { options, descriptor } = descriptorOptions
       ? splitPrivateDnsOptionsAndDescriptor(descriptorOptions)
-      : { descriptor: {} };
-    const { groupName, subscriptionId, abortSignal } = this.#buildMergedOptions(options);
-    if (groupName == null) {
+      : { descriptor: {} as PrivateDnsZoneDescriptor };
+    const effectiveOptions = this.#buildMergedOptions(options);
+
+    if (effectiveOptions.groupName == null) {
       throw new Error("A group name is required to perform DNS zone operations");
     }
 
+    let upsertRequired = false;
     let zone = await this.privateZoneGet(name, options);
-    if (zone == null) {
+
+    let subscriptionId = effectiveOptions.subscriptionId;
+
+    if (zone) {
+      subscriptionId ??= extractSubscriptionFromId(zone.id);
+      // TODO
+    } else {
+      upsertRequired = true;
+      zone = { ...descriptor, name, location: "global" };
+    }
+
+    if (applySourceToTargetObject(zone, descriptor)) {
+      upsertRequired = true;
+    }
+
+    if (upsertRequired) {
       const client = this.getPrivateDnsClient(subscriptionId);
-      zone = await client.privateZones.beginCreateOrUpdateAndWait(
-        groupName,
-        name,
-        { ...descriptor, location: "global" },
-        { abortSignal },
-      );
+      zone = await client.privateZones.beginCreateOrUpdateAndWait(effectiveOptions.groupName, name, zone, {
+        abortSignal: effectiveOptions.abortSignal,
+      });
     }
 
     return zone;
