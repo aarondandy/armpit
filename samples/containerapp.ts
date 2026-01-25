@@ -10,12 +10,7 @@ const targetEnvironment = await loadMyEnvironment("samples");
 const targetLocation = targetEnvironment.defaultLocation ?? "centralus";
 await az.account.setOrLogin(targetEnvironment);
 
-const rg = await az.group({
-  name: `samples-${targetLocation}`,
-  location: targetLocation,
-  subscriptionId: targetEnvironment.subscriptionId,
-  tags,
-});
+const rg = await az.group(`samples-${targetLocation}`, targetLocation, { tags });
 const resourceHash = new NameHash(targetEnvironment.subscriptionId, rg.name, { defaultLength: 6 });
 
 const appEnv = await rg.containerApp.envUpsert(`appenv-sample-${resourceHash}-${rg.location}`, {

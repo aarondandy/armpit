@@ -21,9 +21,7 @@ const myUser = await az.account.showSignedInUser();
 // Resource Group
 // --------------
 
-const rg = await az.group({
-  name: `videogames-${targetLocation}`,
-  location: targetLocation,
+const rg = await az.group(`videogames-${targetLocation}`, targetLocation, {
   subscriptionId: targetEnvironment.subscriptionId,
   tags,
 });

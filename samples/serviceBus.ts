@@ -10,11 +10,7 @@ const targetLocation = targetEnvironment.defaultLocation ?? "centralus";
 await az.account.setOrLogin(targetEnvironment);
 const myUser = await az.account.showSignedInUser();
 
-const rg = await az.group({
-  name: `samples-${targetLocation}`,
-  location: targetLocation,
-  tags,
-});
+const rg = await az.group(`samples-${targetLocation}`, targetLocation, { tags });
 const resourceHash = new NameHash(targetEnvironment.subscriptionId, { defaultLength: 6 }).concat(rg.name);
 
 console.log("Preparing servicebus resources...");

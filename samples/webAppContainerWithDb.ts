@@ -16,11 +16,7 @@ await az.account.setOrLogin(targetEnvironment);
 const myIp = fetch("https://api.ipify.org/").then(r => r.text());
 let myUser = await az.account.showSignedInUser();
 
-const rg = await az.group({
-  name: `samples-${targetLocation}`,
-  location: targetLocation,
-  tags,
-});
+const rg = await az.group(`samples-${targetLocation}`, targetLocation, { tags });
 const resourceHash = new NameHash(targetEnvironment.subscriptionId, rg.name, { defaultLength: 6 });
 
 // -------

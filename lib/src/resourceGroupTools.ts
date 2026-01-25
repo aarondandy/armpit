@@ -42,8 +42,12 @@ interface GroupUpsertDescriptor extends Pick<ResourceGroup, "tags"> {
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export interface ResourceGroupTools {
-  (name: string, location: string, subscriptionId?: SubscriptionId | string): Promise<AzGroupProvider>;
-  (descriptor: GroupUpsertDescriptor): Promise<AzGroupProvider>;
+  (
+    name: string,
+    location: string,
+    descriptorOptions?: Omit<GroupUpsertDescriptor, "name" | "location"> & { abortSignal?: AbortSignal },
+  ): Promise<AzGroupProvider>;
+  (descriptorOptions: GroupUpsertDescriptor & { abortSignal?: AbortSignal }): Promise<AzGroupProvider>;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
@@ -62,72 +66,75 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
   protected fnImpl(
     name: string,
     location: string,
-    subscriptionId?: SubscriptionId | string,
-    abortSignal?: AbortSignal,
+    descriptorOptions?: Omit<GroupUpsertDescriptor, "name" | "location"> & { abortSignal?: AbortSignal },
   ): Promise<AzGroupProvider>;
-  protected fnImpl(descriptor: GroupUpsertDescriptor, abortSignal?: AbortSignal): Promise<AzGroupProvider>;
+  protected fnImpl(descriptorOptions: GroupUpsertDescriptor & { abortSignal?: AbortSignal }): Promise<AzGroupProvider>;
   protected async fnImpl(
-    nameOrDescriptor: string | GroupUpsertDescriptor,
-    secondArg?: string | AbortSignal,
-    thirdArg?: SubscriptionId | string,
-    fourthArg?: AbortSignal,
+    ...args:
+      | [string, string, (Omit<GroupUpsertDescriptor, "name" | "location"> & { abortSignal?: AbortSignal })?]
+      | [GroupUpsertDescriptor & { abortSignal?: AbortSignal }]
   ): Promise<AzGroupProvider> {
     let groupName: string;
-    let location: string;
-    let subscriptionId: SubscriptionId | null = null;
+    let location: string | undefined;
+    let subscriptionId: SubscriptionId | undefined | null;
+    let tags: ResourceGroup["tags"];
     let abortSignal: AbortSignal | undefined;
 
-    if (nameOrDescriptor == null) {
+    if (!(args.length > 0)) {
       throw new Error("Name or descriptor is required");
     }
 
-    let tags: GroupUpsertDescriptor["tags"];
+    if (typeof args[0] === "string") {
+      // args: [name, location, partial descriptor & options]
+      groupName = args[0];
 
-    if (typeof nameOrDescriptor === "string") {
-      // overload: name, location, subscriptionId?, abortSignal?
-      abortSignal = fourthArg;
+      if (args.length >= 1) {
+        if (args[1] != null) {
+          if (typeof args[1] !== "string") {
+            throw new Error("Location argument is not valid");
+          }
 
-      groupName = nameOrDescriptor;
-      if (secondArg == null) {
-        location = this.#getRequiredDefaultLocation();
-      } else if (typeof secondArg === "string") {
-        location = secondArg;
-      } else {
-        throw new Error("Location argument is not valid");
+          location = args[1];
+        }
+
+        if (args.length >= 2 && args[2] != null) {
+          const descriptorOptions = args[2];
+          if (descriptorOptions.subscriptionId != null) {
+            if (!isSubscriptionId(descriptorOptions.subscriptionId)) {
+              throw new Error("Given subscription ID is not valid");
+            }
+
+            subscriptionId = descriptorOptions.subscriptionId;
+          }
+
+          if (descriptorOptions.tags) {
+            tags = descriptorOptions.tags;
+          }
+
+          if (descriptorOptions.abortSignal) {
+            abortSignal = descriptorOptions.abortSignal;
+          }
+        }
       }
+    } else if (args[0] != null) {
+      const descriptorOptions = args[0];
 
-      if (thirdArg != null) {
-        if (!isSubscriptionId(thirdArg)) {
+      groupName = descriptorOptions.name;
+      tags = descriptorOptions.tags;
+
+      location = descriptorOptions.location;
+
+      if (descriptorOptions.subscriptionId != null) {
+        if (!isSubscriptionId(descriptorOptions.subscriptionId)) {
           throw new Error("Given subscription ID is not valid");
         }
 
-        subscriptionId = thirdArg;
-      }
-    } else if (nameOrDescriptor.name != null) {
-      // overload: {name, location, subscriptionId?, ...}, abortSignal?
-      abortSignal = secondArg as AbortSignal;
-
-      if (typeof nameOrDescriptor.name !== "string") {
-        throw new Error("Group name is required");
+        subscriptionId = descriptorOptions.subscriptionId;
       }
 
-      groupName = nameOrDescriptor.name;
-
-      if (typeof nameOrDescriptor.location !== "string") {
-        throw new Error("An explicit location is required");
+      if (descriptorOptions.abortSignal) {
+        abortSignal = descriptorOptions.abortSignal;
       }
-
-      location = nameOrDescriptor.location;
-
-      if (nameOrDescriptor.subscriptionId != null) {
-        if (!isSubscriptionId(nameOrDescriptor.subscriptionId)) {
-          throw new Error("Provided subscription ID is not valid");
-        }
-
-        subscriptionId = nameOrDescriptor.subscriptionId;
-      }
-
-      tags = nameOrDescriptor.tags;
     } else {
       throw new Error("Unexpected arguments");
     }
@@ -144,13 +151,30 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
       subscriptionId = this.#options.subscriptionId;
     }
 
-    const baseOptions = { subscriptionId: subscriptionId ?? undefined, abortSignal };
-    let group = await this.get(groupName, baseOptions);
+    const operationOptions = {} as GroupToolsBaseOptions;
+    if (subscriptionId) {
+      operationOptions.subscriptionId = subscriptionId;
+    }
+    if (abortSignal) {
+      operationOptions.abortSignal = abortSignal;
+    }
+
+    let group = await this.get(groupName, operationOptions);
     if (group == null) {
-      group = await this.create(groupName, location, { tags, ...baseOptions });
+      group = await this.create(groupName, location, { tags, ...operationOptions });
     } else {
       if (!locationNameOrCodeEquals(location, group.location)) {
         throw new ExistingGroupLocationConflictError(group, location);
+      }
+
+      let upsertRequired = false;
+
+      if (tags && !isObjectShallowEqual(tags, group.tags ?? {})) {
+        upsertRequired = true;
+      }
+
+      if (upsertRequired) {
+        group = await this.create(groupName, location, { tags, ...operationOptions });
       }
     }
 
@@ -160,15 +184,6 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
 
     if (subscriptionId == null && group.id != null) {
       subscriptionId = extractSubscriptionFromId(group.id);
-    }
-
-    if (tags && (group.tags == null || !isObjectShallowEqual(group.tags, tags))) {
-      if (!subscriptionId) {
-        throw new Error("Subscription ID is required to update group");
-      }
-
-      const client = this.getClient(subscriptionId);
-      group = await client.resourceGroups.update(group.name, { tags }, { abortSignal });
     }
 
     const invoker = this.#invoker({
@@ -184,7 +199,7 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     const mainFn = (...args: unknown[]) => (invoker as Function)(...args);
-    const cliResult = Object.assign(mainFn, { location, subscriptionId });
+    const cliResult = Object.assign(mainFn, { location, subscriptionId: subscriptionId ?? null });
     Object.defineProperty(cliResult, "name", {
       value: groupName,
       configurable: true,
@@ -300,15 +315,6 @@ export class ResourceGroupTools extends CallableClassBase implements ResourceGro
     }
 
     return this.#dependencies.managementClientFactory.get(ResourceManagementClient, clientSubscriptionId, options);
-  }
-
-  #getRequiredDefaultLocation(): string {
-    const location = this.#options.location;
-    if (location == null) {
-      throw new Error("No required default location has been set");
-    }
-
-    return location;
   }
 
   #buildMergedOptions(options?: GroupToolsBaseOptions | null) {

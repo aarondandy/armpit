@@ -2,16 +2,12 @@ import { az, toCliArgPairs, NameHash } from "armpit";
 import { loadMyEnvironment } from "./utils/state.js";
 import type { SkuName, StorageAccount, BlobContainer } from "@azure/arm-storage";
 
-const tags = {
-  env: "samples",
-  script: import.meta.url.split("/").pop(),
-} as const;
-
+const tags = { env: "samples", script: import.meta.url.split("/").pop()! } as const;
 const targetEnvironment = await loadMyEnvironment("samples");
 const targetLocation = targetEnvironment.defaultLocation ?? "centralus";
 await az.account.setOrLogin(targetEnvironment);
 
-const rg = await az.group(`samples-${targetLocation}`, targetLocation);
+const rg = await az.group(`samples-${targetLocation}`, targetLocation, { tags });
 const resourceHash = new NameHash(targetEnvironment.subscriptionId, { defaultLength: 6 }).concat(rg.name);
 
 // Ensure the storage account is setup

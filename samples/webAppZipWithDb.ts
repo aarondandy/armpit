@@ -1,12 +1,11 @@
 import path from "node:path";
-import fs from "node:fs";
-import archiver from "archiver";
 import { az, toCliArgPairs, NameHash } from "armpit";
 import { $ } from "execa";
 import mssql from "mssql";
 import type { PrivateEndpoint } from "@azure/arm-network";
 import type { Server as SqlServer, Database as SqlDatabase } from "@azure/arm-sql";
 import { loadMyEnvironment } from "./utils/state.js";
+import { zipFolder } from "utils/helpers.js";
 
 // --------------------------
 // Environment & Subscription
@@ -20,11 +19,7 @@ await az.account.setOrLogin(targetEnvironment);
 const myIp = fetch("https://api.ipify.org/").then(r => r.text());
 let myUser = await az.account.showSignedInUser();
 
-const rg = await az.group({
-  name: `samples-${targetLocation}`,
-  location: targetLocation,
-  tags,
-});
+const rg = await az.group(`samples-${targetLocation}`, targetLocation, { tags });
 const resourceHash = new NameHash(targetEnvironment.subscriptionId, rg.name, { defaultLength: 6 });
 
 // -------
@@ -170,15 +165,7 @@ const outDir = path.join(srcDir, "dist");
 await $`dotnet build ${srcDir} -o ${outDir}`;
 
 const appZipFile = path.join(outDir, "app.zip");
-const outStream = fs.createWriteStream(appZipFile);
-const archive = archiver("zip", { zlib: { level: 9 } });
-archive.pipe(outStream);
-archive.directory(outDir, false);
-await new Promise((resolve, reject) => {
-  outStream.on("close", () => resolve(1));
-  archive.on("error", err => reject(err));
-  archive.finalize();
-});
+await zipFolder(outDir, appZipFile);
 
 console.log(`[app] deploying zip...`);
 await rg`webapp deploy --src-path ${appZipFile} -n ${(await app).name}`;

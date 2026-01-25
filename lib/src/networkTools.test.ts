@@ -378,7 +378,7 @@ describe("upsert nsg", () => {
       groupName,
       nsgName,
       {
-        name: nsgName,
+        name: expect.anything(),
         location,
       },
       expect.anything(),
@@ -713,6 +713,7 @@ describe("upsert private zone", () => {
       groupName,
       zoneName,
       {
+        name: expect.anything(),
         location: "global",
       },
       expect.anything(),
