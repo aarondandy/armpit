@@ -1,11 +1,12 @@
 import path from "node:path";
+import * as fs from "fs/promises";
 import { az, toCliArgPairs, NameHash } from "armpit";
 import { $ } from "execa";
 import mssql from "mssql";
 import type { PrivateEndpoint } from "@azure/arm-network";
 import type { Server as SqlServer, Database as SqlDatabase } from "@azure/arm-sql";
 import { loadMyEnvironment } from "./utils/state.js";
-import { zipFolder } from "utils/helpers.js";
+import { zipFolder } from "./utils/helpers.js";
 
 // --------------------------
 // Environment & Subscription
@@ -21,6 +22,29 @@ let myUser = await az.account.showSignedInUser();
 
 const rg = await az.group(`samples-${targetLocation}`, targetLocation, { tags });
 const resourceHash = new NameHash(targetEnvironment.subscriptionId, rg.name, { defaultLength: 6 });
+
+// --------
+// Software
+// --------
+
+const software = (async () => {
+  const srcDir = path.join(import.meta.dirname, "db-app");
+  const outDir = path.join(srcDir, "dist");
+  const appZipFile = path.join(outDir, "app.zip");
+
+  console.log(`[software] building application to ${outDir}`);
+
+  await $`dotnet build ${srcDir} -o ${outDir}`;
+
+  console.log(`[software] creating deployable zip from ${outDir}`);
+
+  await fs.rm(appZipFile, { force: true });
+  await zipFolder(outDir, appZipFile);
+
+  console.log(`[software] ready for deployment: ${appZipFile}`);
+
+  return appZipFile;
+})();
 
 // -------
 // Network
@@ -160,14 +184,12 @@ const app = (async () => {
   return app;
 })();
 
-const srcDir = path.join(import.meta.dirname, "db-app");
-const outDir = path.join(srcDir, "dist");
-await $`dotnet build ${srcDir} -o ${outDir}`;
+// ----------
+// Deployment
+// ----------
 
-const appZipFile = path.join(outDir, "app.zip");
-await zipFolder(outDir, appZipFile);
-
-console.log(`[app] deploying zip...`);
-await rg`webapp deploy --src-path ${appZipFile} -n ${(await app).name}`;
-
-console.log(`[app] app ready ${"https://" + (await app).hostNames?.[0]}`);
+const deployableSourcePath = await software;
+const deployTaget = await app;
+console.log(`[app] deploying ${deployableSourcePath} to ${deployTaget.name}`);
+await rg`webapp deploy --src-path ${deployableSourcePath} -n ${deployTaget.name}`;
+console.log(`[app] app ready ${"https://" + deployTaget.hostNames?.[0]}`);
