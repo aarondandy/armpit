@@ -82,7 +82,7 @@ describe("upsert group", () => {
     });
     const tools = new ResourceGroupTools(sharedDependencies, {});
 
-    const result = await tools("stuff", "centralus", subscriptionId);
+    const result = await tools("stuff", "centralus", { subscriptionId });
 
     expect(result).toBeTruthy();
     expect(result.name).toBe("stuff");
@@ -101,7 +101,7 @@ describe("upsert group", () => {
     vi.spyOn(resourceClient.resourceGroups, "createOrUpdate");
     const tools = new ResourceGroupTools(sharedDependencies, {});
 
-    const result = await tools("stuff", "centralus", subscriptionId);
+    const result = await tools("stuff", "centralus", { subscriptionId });
 
     expect(result).toBeTruthy();
     expect(result.name).toBe("stuff");
@@ -120,7 +120,9 @@ describe("upsert group", () => {
     vi.spyOn(resourceClient.resourceGroups, "createOrUpdate");
     const tools = new ResourceGroupTools(sharedDependencies, {});
 
-    await expect(() => tools("stuff", "eastus", subscriptionId)).rejects.toThrow(/conflicts with expected location/);
+    await expect(() => tools("stuff", "eastus", { subscriptionId })).rejects.toThrow(
+      /conflicts with expected location/,
+    );
 
     expect(resourceClient.resourceGroups.get).toHaveBeenCalledExactlyOnceWith("stuff", expect.anything());
     expect(resourceClient.resourceGroups.createOrUpdate).not.toHaveBeenCalled();

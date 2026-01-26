@@ -13,10 +13,17 @@ await az.account.setOrLogin(targetEnvironment);
 const rg = await az.group(`samples-${targetLocation}`, targetLocation, { tags });
 const resourceHash = new NameHash(targetEnvironment.subscriptionId, rg.name, { defaultLength: 6 });
 
+// -------------
+// Container App
+// -------------
+
+console.log(`[app] preparing contain app resources`);
+
 const appEnv = await rg.containerApp.envUpsert(`appenv-sample-${resourceHash}-${rg.location}`, {
   workloadProfiles: [{ name: "Consumption", workloadProfileType: "Consumption" }],
   tags,
 });
+
 console.log(`[app] app environment ${appEnv.name} ready via ${appEnv.staticIp}`);
 
 const app = await rg.containerApp.appUpsert(`app-aspnetsample-${resourceHash}-${rg.location}`, {
@@ -40,4 +47,5 @@ const app = await rg.containerApp.appUpsert(`app-aspnetsample-${resourceHash}-${
   identity: { type: "SystemAssigned" },
   tags,
 });
+
 console.log(`[app] app revision ready ${"https://" + app.latestRevisionFqdn}`);
