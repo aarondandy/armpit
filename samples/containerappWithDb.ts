@@ -65,28 +65,27 @@ const network = (async () => {
 // --------
 
 const database = (async () => {
-  const dbServer = rg<SqlServer>`sql server create -n db-sample-${resourceHash}-${rg.location}
+  const dbServer = await rg<SqlServer>`sql server create -n db-sample-${resourceHash}-${rg.location}
     --enable-ad-only-auth --external-admin-principal-type User
     --external-admin-name ${(await myUser).userPrincipalName} --external-admin-sid ${(await myUser).id}
     --tags ${toCliArgPairs(tags)}`;
-  dbServer.then(s => console.log(`[db] server created ${s.fullyQualifiedDomainName}`));
+  console.log(`[db] server created ${dbServer.fullyQualifiedDomainName}`);
 
-  const db = dbServer.then(
-    dbServer =>
-      rg<SqlDatabase>`sql db create --name sample --server ${dbServer.name} --tier Basic --tags ${toCliArgPairs(tags)}`,
-  );
-  db.then(db => console.log(`[db] database ${db.name} created`));
+  const db = await rg<SqlDatabase>`sql db create --name sample --server ${dbServer.name}
+    --tier Basic --tags ${toCliArgPairs(tags)}`;
+  console.log(`[db] database ${db.name} created`);
 
-  const dbAccess = Promise.all([dbServer, myIp]).then(async ([dbServer, myIp]) => {
-    await rg`sql server firewall-rule create -n MyRule --server ${dbServer.name} --start-ip-address ${myIp} --end-ip-address ${myIp}`;
-    console.log(`[db] access allowed through firewall for ${myIp}`);
-  });
+  const dbAccess = (async () => {
+    const address = await myIp;
+    await rg`sql server firewall-rule create -n MyRule --server ${dbServer.name} --start-ip-address ${address} --end-ip-address ${address}`;
+    console.log(`[db] access allowed through firewall for ${address}`);
+  })();
 
   const runOnDb = async (action: (pool: mssql.ConnectionPool) => Promise<void>) => {
     await dbAccess; // wait for access before connecting
     const pool = new mssql.ConnectionPool({
-      server: `${(await dbServer).name}.database.windows.net`,
-      database: (await db).name,
+      server: `${dbServer.name}.database.windows.net`,
+      database: db.name,
       authentication: { type: "token-credential", options: { credential: rg.getCredential() } },
     });
     try {
@@ -103,7 +102,7 @@ const database = (async () => {
 
     const privateEndpoint = await rg<PrivateEndpoint>`network private-endpoint create --name ${name}
       --connection-name ${name} --nic-name ${name} --group-id sqlServer
-      --private-connection-resource-id ${(await dbServer).id} --vnet-name ${vnet.name} --subnet ${"db"}
+      --private-connection-resource-id ${dbServer.id} --vnet-name ${vnet.name} --subnet ${"db"}
       --tags ${toCliArgPairs(tags)}`;
 
     await rg`network private-endpoint dns-zone-group create --name ${name}
@@ -112,8 +111,8 @@ const database = (async () => {
   })();
 
   return {
-    dbServer: await dbServer,
-    db: await db,
+    dbServer,
+    db,
     runOnDb,
     sqlConnectionString: `Server=${(await dbServer).name}.database.windows.net;Database=${(await db).name};Authentication=Active Directory Managed Identity;`,
   };
@@ -134,16 +133,6 @@ const app = (async () => {
   console.log(`[app] app environment ${containerAppEnv.name} ready via ${containerAppEnv.staticIp}`);
 
   const { sqlConnectionString, runOnDb } = await database;
-
-  // Prepare database for the application
-  await runOnDb(async pool => {
-    const statements = [
-      "IF OBJECT_ID('NumberSearch', 'U') IS NULL CREATE TABLE NumberSearch ([Value] BIGINT NOT NULL);",
-      "IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_NumberSearch_Value' AND object_id = OBJECT_ID('NumberSearch')) CREATE CLUSTERED INDEX IX_NumberSearch_Value ON NumberSearch ([Value]);",
-    ];
-    await pool.request().query(statements.join("\n"));
-    console.log("[app] schema defined");
-  });
 
   const containerApp = await rg.containerApp.appUpsert(`app-sample${resourceHash}`, {
     environmentId: containerAppEnv.id,
@@ -187,4 +176,21 @@ const app = (async () => {
   return containerApp;
 })();
 
-console.log(`[app] app revision ready ${"https://" + (await app).configuration?.ingress?.fqdn}`);
+// ----------
+// Deployment
+// ----------
+
+const { runOnDb } = await database;
+await runOnDb(async pool => {
+  // Prepare database for the application
+  const statements = [
+    "IF OBJECT_ID('NumberSearch', 'U') IS NULL CREATE TABLE NumberSearch ([Value] BIGINT NOT NULL);",
+    "IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_NumberSearch_Value' AND object_id = OBJECT_ID('NumberSearch')) CREATE CLUSTERED INDEX IX_NumberSearch_Value ON NumberSearch ([Value]);",
+  ];
+  await pool.request().query(statements.join("\n"));
+  console.log("[deploy] schema defined");
+});
+
+console.log(`
+app revision ready ${"https://" + (await app).configuration?.ingress?.fqdn}
+`);
