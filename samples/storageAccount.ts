@@ -2,6 +2,10 @@ import { az, toCliArgPairs, NameHash } from "armpit";
 import { loadMyEnvironment } from "./utils/state.js";
 import type { SkuName, StorageAccount, BlobContainer } from "@azure/arm-storage";
 
+// --------------------------
+// Environment & Subscription
+// --------------------------
+
 const tags = { env: "samples", script: import.meta.url.split("/").pop()! } as const;
 const targetEnvironment = await loadMyEnvironment("samples");
 const targetLocation = targetEnvironment.defaultLocation ?? "centralus";
@@ -9,6 +13,10 @@ await az.account.setOrLogin(targetEnvironment);
 
 const rg = await az.group(`samples-${targetLocation}`, targetLocation, { tags });
 const resourceHash = new NameHash(targetEnvironment.subscriptionId, { defaultLength: 6 }).concat(rg.name);
+
+// -----------------
+// Storage Resources
+// -----------------
 
 // Ensure the storage account is setup
 const sku: SkuName = "Standard_LRS";
@@ -21,6 +29,10 @@ console.log(`storage ready ${sa.name}`);
 // Give ourselves access
 const user = await az.account.showSignedInUser();
 await az`role assignment create --assignee ${user.userPrincipalName} --role ${"Storage Account Contributor"} --scope ${sa.id}`;
+
+// ---------------
+// Storage Testing
+// ---------------
 
 // Ensure storage containers exist and upload content to each in parallel
 const sampleContainers = [

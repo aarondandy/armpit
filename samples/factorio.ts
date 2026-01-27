@@ -17,10 +17,6 @@ const state = await loadState<{ serverName?: string }>();
 const myIp = fetch("https://api.ipify.org/").then(r => r.text());
 const myUser = az.account.showSignedInUser();
 
-// --------------
-// Resource Group
-// --------------
-
 const rg = await az.group(`videogames-${targetLocation}`, targetLocation, {
   subscriptionId: targetEnvironment.subscriptionId,
   tags,

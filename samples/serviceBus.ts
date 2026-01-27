@@ -4,6 +4,10 @@ import { loadMyEnvironment } from "./utils/state.js";
 import type { SBNamespace, SBQueue } from "@azure/arm-servicebus";
 import { ServiceBusClient, type ServiceBusError } from "@azure/service-bus";
 
+// --------------------------
+// Environment & Subscription
+// --------------------------
+
 const tags = { env: "samples", script: import.meta.url.split("/").pop()! } as const;
 const targetEnvironment = await loadMyEnvironment("samples");
 const targetLocation = targetEnvironment.defaultLocation ?? "centralus";
@@ -12,6 +16,10 @@ const myUser = await az.account.showSignedInUser();
 
 const rg = await az.group(`samples-${targetLocation}`, targetLocation, { tags });
 const resourceHash = new NameHash(targetEnvironment.subscriptionId, { defaultLength: 6 }).concat(rg.name);
+
+// -------------------
+// Messaging Resources
+// -------------------
 
 console.log("Preparing servicebus resources...");
 const namespace =
@@ -25,8 +33,14 @@ for (const roleName of ["Azure Service Bus Data Receiver", "Azure Service Bus Da
   await az`role assignment create --assignee ${myUser.userPrincipalName} --role ${roleName} --scope ${namespace.id}`;
 }
 
+await sleep(3000); // Sometimes the permissions can take a moment, so wait a moment.
+
+// --------------
+// Messaging Test
+// --------------
+
 const connectionString = `Endpoint=sb://${new URL(namespace.serviceBusEndpoint!).host};`;
-console.log(connectionString);
+console.log(`Testing ${connectionString}`);
 
 const client = new ServiceBusClient(new URL(namespace.serviceBusEndpoint!).host, rg.getCredential());
 try {
