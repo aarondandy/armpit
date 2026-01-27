@@ -15,105 +15,121 @@ const myIp = fetch("https://api.ipify.org/").then(r => r.text());
 const rg = await az.group(`samples-${targetLocation}`, targetLocation, { tags });
 const resourceHash = new NameHash(targetEnvironment.subscriptionId, rg.name, { defaultLength: 6 });
 
-const asgJump = rg.network.asgUpsert(`asg-jump`, { tags });
+// -------
+// Network
+// -------
 
-const nsg = rg.network.nsgUpsert(`nsg-sample`, {
-  securityRules: [
-    {
-      name: "WinRemoteDesktop",
-      direction: "Inbound",
-      priority: 1000,
-      access: "Allow",
-      protocol: "*",
-      sourceAddressPrefix: await myIp,
-      destinationApplicationSecurityGroups: [await asgJump],
-      destinationPortRange: "3389",
-    },
-  ],
-  tags,
-});
-
-const natIp = rg.network.pipUpsert(`pip-natsample-${rg.location}`, {
-  sku: "Standard",
-  publicIPAllocationMethod: "Static",
-  tags,
-});
-natIp.then(x => console.log(`[net] nat ip ${x.ipAddress}`));
-
-const nat = (async () =>
-  rg.network.natGatewayUpsert(`nat-sample-${rg.location}`, {
+const network = (async () => {
+  const natIp = rg.network.pipUpsert(`pip-natsample-${rg.location}`, {
     sku: "Standard",
-    publicIpAddresses: [await natIp],
+    publicIPAllocationMethod: "Static",
     tags,
-  }))();
-nat.then(x => console.log(`[net] nat gateway ${x.name}`));
+  });
+  natIp.then(x => console.log(`[net] nat ip ${x.ipAddress}`));
 
-const vnet = (async () =>
-  rg.network.vnetUpsert(`vnet-sample-${rg.location}`, {
+  const nat = natIp.then(natIp =>
+    rg.network.natGatewayUpsert(`nat-sample-${rg.location}`, {
+      sku: "Standard",
+      publicIpAddresses: [natIp],
+      tags,
+    }),
+  );
+  nat.then(x => console.log(`[net] nat gateway ${x.name}`));
+
+  const asgJump = await rg.network.asgUpsert(`asg-jump`, { tags });
+
+  const nsg = await rg.network.nsgUpsert(`nsg-sample`, {
+    securityRules: [
+      {
+        name: "WinRemoteDesktop",
+        direction: "Inbound",
+        priority: 1000,
+        access: "Allow",
+        protocol: "*",
+        sourceAddressPrefix: await myIp,
+        destinationApplicationSecurityGroups: [asgJump],
+        destinationPortRange: "3389",
+      },
+    ],
+    tags,
+  });
+
+  const vnet = await rg.network.vnetUpsert(`vnet-sample-${rg.location}`, {
     addressPrefix: "10.10.0.0/16",
     subnets: [
       {
         name: "jump",
         addressPrefix: "10.10.4.0/24",
         natGateway: await nat,
-        networkSecurityGroup: await nsg,
+        networkSecurityGroup: nsg,
       },
     ],
     tags,
-  }))();
-vnet.then(x => console.log(`[net] vnet ${x.name}`));
+  });
+  console.log(`[net] vnet ${vnet.name}`);
 
-const vmIp = rg.network.pipUpsert(`pip-jump-${rg.location}`, {
-  sku: "Standard",
-  publicIPAllocationMethod: "Static",
-  dnsSettings: { domainNameLabel: `jump-sample-${resourceHash}` },
-  tags,
-});
-vmIp.then(x => console.log(`[vm] ip ${x.ipAddress}`));
+  return { vnet, natIp: await natIp, nsg, asgJump };
+})();
 
-const nic = (async () =>
-  rg.network.nicUpsert(`vm-jump${rg.location}${resourceHash}-nic`, {
+// ---------------
+// Virtual Machine
+// ---------------
+
+const { vmIp } = await (async () => {
+  const vmIp = await rg.network.pipUpsert(`pip-jump-${rg.location}`, {
+    sku: "Standard",
+    publicIPAllocationMethod: "Static",
+    dnsSettings: { domainNameLabel: `jump-sample-${resourceHash}` },
+    tags,
+  });
+  console.log(`[vm] ip ${vmIp.ipAddress}`);
+
+  const { vnet, nsg, asgJump } = await network;
+
+  const nic = await rg.network.nicUpsert(`vm-jump${rg.location}${resourceHash}-nic`, {
     nicType: "Standard",
-    networkSecurityGroup: await nsg,
+    networkSecurityGroup: nsg,
     ipConfigurations: [
       {
         name: "ipconfig-vm",
         primary: true,
         privateIPAddress: "10.10.4.10",
         privateIPAllocationMethod: "Static",
-        publicIPAddress: await vmIp,
-        subnet: (await vnet).subnets!.find(s => s.name === "jump")!,
-        applicationSecurityGroups: [await asgJump],
+        publicIPAddress: vmIp,
+        subnet: vnet.subnets?.find(s => s.name === "jump"),
+        applicationSecurityGroups: [asgJump],
       },
     ],
     tags,
-  }))();
-nic.then(x => console.log(`[vm] nic created ${x.name}`));
+  });
+  console.log(`[vm] nic created ${nic.name}`);
 
-const vm = await rg.compute.vmUpsert(`vm-jump${rg.location}${resourceHash}`, {
-  hardwareProfile: { vmSize: "Standard_B2ls_v2" },
-  networkProfile: { networkInterfaces: [await nic] },
-  osProfile: {
-    computerName: `jump${rg.location}`,
-    adminUsername: "human",
-    adminPassword: "Passw0rd",
-    windowsConfiguration: { patchSettings: { patchMode: "AutomaticByPlatform" } },
-  },
-  storageProfile: {
-    imageReference: {
-      publisher: "MicrosoftWindowsServer",
-      offer: "WindowsServer",
-      sku: "2025-datacenter-azure-edition-smalldisk",
-      version: "latest",
+  const vm = await rg.compute.vmUpsert(`vm-jump${rg.location}${resourceHash}`, {
+    hardwareProfile: { vmSize: "Standard_B2ls_v2" },
+    networkProfile: { networkInterfaces: [nic] },
+    osProfile: {
+      computerName: `jump${rg.location}`,
+      adminUsername: "human",
+      adminPassword: "Passw0rd",
+      windowsConfiguration: { patchSettings: { patchMode: "AutomaticByPlatform" } },
     },
-    osDisk: { name: `vm-jump${rg.location}${resourceHash}-os`, createOption: "FromImage", diskSizeGB: 32 },
-  },
-  tags,
-});
-console.log(`[vm] vm created ${vm.name}`);
+    storageProfile: {
+      imageReference: {
+        publisher: "MicrosoftWindowsServer",
+        offer: "WindowsServer",
+        sku: "2025-datacenter-azure-edition-smalldisk",
+        version: "latest",
+      },
+      osDisk: { name: `vm-jump${rg.location}${resourceHash}-os`, createOption: "FromImage", diskSizeGB: 32 },
+    },
+    tags,
+  });
+  console.log(`[vm] vm created ${vm.name}`);
+  return { vm, vmIp };
+})();
 
 console.log(`
 VM and NAT Gateway are ready.
-VM IP: ${(await vmIp).ipAddress}
-Egress: ${(await natIp).ipAddress}
+VM IP: ${vmIp.ipAddress}
+Egress: ${(await network).natIp.ipAddress}
 `);
