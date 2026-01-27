@@ -15,7 +15,7 @@ await az.account.setOrLogin(targetEnvironment);
 const state = await loadState<{ serverName?: string }>();
 
 const myIp = fetch("https://api.ipify.org/").then(r => r.text());
-const myUser = await az.account.showSignedInUser();
+const myUser = az.account.showSignedInUser();
 
 // --------------
 // Resource Group
@@ -27,20 +27,25 @@ const rg = await az.group(`videogames-${targetLocation}`, targetLocation, {
 });
 const resourceHash = new NameHash(targetEnvironment.subscriptionId).concat(rg.name);
 
+if (!state.serverName) {
+  state.serverName = `factorio-${resourceHash}`;
+  await saveState(state);
+}
+
 // -------
 // Network
 // -------
 
-const asgs = rg.network.asgMultiUpsert(
-  {
-    ssh: "asg-ssh",
-    factorio: "asg-factorio",
-  },
-  { tags },
-);
+const network = (async () => {
+  const asgs = await rg.network.asgMultiUpsert(
+    {
+      ssh: "asg-ssh",
+      factorio: "asg-factorio",
+    },
+    { tags },
+  );
 
-const nsg = (async () =>
-  rg.network.nsgUpsert(`nsg-videogames-${rg.location}`, {
+  const nsg = await rg.network.nsgUpsert(`nsg-videogames-${rg.location}`, {
     securityRules: [
       {
         name: "FactoryMustGrow",
@@ -48,7 +53,7 @@ const nsg = (async () =>
         priority: 200,
         access: "Allow",
         protocol: "Udp",
-        destinationApplicationSecurityGroups: [(await asgs).factorio],
+        destinationApplicationSecurityGroups: [asgs.factorio],
         destinationPortRange: "34197",
       },
       {
@@ -58,82 +63,87 @@ const nsg = (async () =>
         access: "Allow",
         protocol: "Tcp",
         sourceAddressPrefix: await myIp,
-        destinationApplicationSecurityGroups: [(await asgs).ssh],
+        destinationApplicationSecurityGroups: [asgs.ssh],
         destinationPortRange: "22",
       },
     ],
     tags,
-  }))();
-nsg.then(nsg => console.log(`[net] nsg ${nsg.name}`));
+  });
+  console.log(`[net] nsg ${nsg.name}`);
 
-const vnet = (async () =>
-  rg.network.vnetUpsert(`vnet-videogames-${rg.location}`, {
+  const vnet = await rg.network.vnetUpsert(`vnet-videogames-${rg.location}`, {
     addressPrefix: "10.64.0.0/16",
     subnets: [
       {
         name: "default",
-        networkSecurityGroup: await nsg,
+        networkSecurityGroup: nsg,
         addressPrefix: "10.64.0.0/24",
       },
       {
         name: "vms",
-        networkSecurityGroup: await nsg,
+        networkSecurityGroup: nsg,
         addressPrefix: "10.64.8.0/24",
       },
     ],
     tags,
-  }))();
-vnet.then(vnet => console.log(`[net] vnet ${vnet.name} ${vnet.addressSpace?.addressPrefixes?.[0]}`));
-const subnetVms = vnet.then(vnet => vnet.subnets!.find(s => s.name === "vms")!);
+  });
+  console.log(`[net] vnet ${vnet.name} ${vnet.addressSpace?.addressPrefixes?.[0]}`);
 
-// -------------------
-// Server and Services
-// -------------------
+  return { asgs, nsg, vnet };
+})();
 
-if (!state.serverName) {
-  state.serverName = `factorio-${resourceHash}`;
-  await saveState(state);
-}
+// ------
+// Server
+// ------
 
-const pip = rg.network.pipUpsert(`pip-${state.serverName}`, {
-  dnsSettings: { domainNameLabel: state.serverName },
-  publicIPAllocationMethod: "Static",
-  sku: "Basic",
-  tags,
-});
-pip.then(pip => console.log(`[vm] public ip ${pip.dnsSettings?.fqdn} (${pip.ipAddress})`));
+const { vm } = await (async () => {
+  const osDisk = rg<Disk>`disk create -n vm-${state.serverName}-os
+    --hyper-v-generation V2
+    --os-type Linux --image-reference Canonical:ubuntu-24_04-lts:server:latest
+    --sku Premium_LRS --size-gb 32
+    --tags ${toCliArgPairs(tags)}`;
+  osDisk.then(d => console.log(`[vm] disk ${d.name}`));
 
-const nic = (async () => rg<NetworkInterface>`network nic create -n vm-${state.serverName}-nic
-  --subnet ${(await subnetVms).id} --public-ip-address ${(await pip).name}
-  --network-security-group ${(await nsg).name}
-  --asgs ${helpers.pickValues(await asgs, "ssh", "factorio").map(a => a.name)}
-  --tags ${toCliArgPairs(tags)}`)();
-nic.then(nic => console.log(`[vm] nic ${nic.ipConfigurations?.[0]?.privateIPAddress}`));
+  const pip = await rg.network.pipUpsert(`pip-${state.serverName}`, {
+    dnsSettings: { domainNameLabel: state.serverName },
+    publicIPAllocationMethod: "Static",
+    sku: "Basic",
+    tags,
+  });
+  console.log(`[vm] public ip ${pip.dnsSettings?.fqdn} (${pip.ipAddress})`);
 
-const osDisk = rg<Disk>`disk create -n vm-${state.serverName}-os
-  --hyper-v-generation V2
-  --os-type Linux --image-reference Canonical:ubuntu-24_04-lts:server:latest
-  --sku Premium_LRS --size-gb 32
-  --tags ${toCliArgPairs(tags)}`;
-osDisk.then(d => console.log(`[vm] disk ${d.name}`));
+  const { vnet, nsg, asgs } = await network;
 
-const vm = await (async () => {
-  const name = `vm-${state.serverName}`;
+  const nic = await rg<NetworkInterface>`network nic create -n vm-${state.serverName}-nic
+    --subnet ${vnet.subnets?.find(s => s.name === "vms")?.id} --public-ip-address ${pip.name}
+    --network-security-group ${nsg.name}
+    --asgs ${helpers.pickValues(asgs, "ssh", "factorio").map(a => a.name)}
+    --tags ${toCliArgPairs(tags)}`;
+  console.log(`[vm] nic ${nic.ipConfigurations?.[0]?.privateIPAddress}`);
+
+  const vmName = `vm-${state.serverName}`;
   const vmResult = await rg<VirtualMachineCreateResult>`vm create
-    -n ${name} --computer-name ${state.serverName}
-    --size Standard_D2als_v6 --nics ${(await nic).id}
+    -n ${vmName} --computer-name ${state.serverName}
+    --size Standard_D2als_v6 --nics ${nic.id}
     --attach-os-disk ${(await osDisk).name} --os-type linux
     --assign-identity [system]
     --tags ${toCliArgPairs(tags)}`;
-  console.log(`[vm] server ${name}`);
-  return { name, ...vmResult };
+  const vm = { name: vmName, ...vmResult };
+  console.log(`[vm] server ${vm.name}`);
+
+  return { vm, nic, pip };
 })();
+
+// ----------------
+// Install Services
+// ----------------
 
 await Promise.all([
   (async () => {
+    const { userPrincipalName } = await myUser;
     await rg<VirtualMachineExtension>`vm extension set --vm-name ${vm.name} --name AADSSHLoginForLinux --publisher Microsoft.Azure.ActiveDirectory`;
-    await az`role assignment create --assignee ${myUser.userPrincipalName} --role ${"Virtual Machine Administrator Login"} --scope ${vm.id}`;
-    console.log(`[vm] user ${myUser.userPrincipalName} can SSH into ${vm.name}`);
+    await az`role assignment create --assignee ${userPrincipalName} --role ${"Virtual Machine Administrator Login"} --scope ${vm.id}`;
+    console.log(`[vm] user ${userPrincipalName} can SSH into ${vm.name}`);
   })(),
   (async () => {
     const scriptPath = path.join(import.meta.dirname, "factorio.init.sh");
