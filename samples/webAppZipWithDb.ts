@@ -156,7 +156,7 @@ const webApp = (async () => {
 
   const app = await rg.appService.webAppUpsert(`app-samplezip${resourceHash}-${rg.location}`, {
     serverFarmId: plan.id,
-    kind: "app,linux,container",
+    kind: "app,linux",
     identity: { type: "SystemAssigned" },
     virtualNetworkSubnetId: vnet.subnets?.find(s => s.name === "web")?.id,
     siteConfig: {
